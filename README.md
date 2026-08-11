@@ -1,0 +1,2 @@
+# Explainable-Multi-Class-Malicious-URL-Detection-Using-Hybrid-Features-and-Ensemble-Machine-Learning
+This project develops an explainable ML-based system to detect malicious URLs as benign, phishing, malware, or defacement. It combines lexical, TF-IDF/N-gram, Host/WHOIS and structural features with SMOTE and a Voting Classifier. Suspicious URLs undergo dynamic analysis, with risk scoring, XAI, and real-time web deployment.
