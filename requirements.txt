@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+pydantic
+pandas
+numpy
+pyarrow
+scikit-learn
+xgboost
+imbalanced-learn
+shap
+tldextract
+python-whois
+joblib
+huggingface_hub
+playwright

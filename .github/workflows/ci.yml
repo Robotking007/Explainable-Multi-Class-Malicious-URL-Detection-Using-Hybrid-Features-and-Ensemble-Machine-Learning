@@ -1,0 +1,57 @@
+name: CI
+
+# Catches syntax errors and broken imports on every push/PR -- the class of
+# bug this project hit repeatedly during local development (typos, wrong
+# argument names, missing imports). It does NOT run actual training: that
+# needs Dataset/ (not in git, multi-GB) and takes hours even on a real GPU,
+# neither of which a CI runner has. This is a fast (~1 min) sanity gate, not
+# a substitute for real testing.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  syntax-and-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Byte-compile every source file (catches syntax errors)
+        run: python -m py_compile $(find src -name "*.py")
+
+      - name: Import every module (catches missing/broken imports)
+        working-directory: .
+        run: |
+          python - <<'EOF'
+          import importlib, sys, traceback
+          from pathlib import Path
+
+          sys.path.insert(0, "src")
+          root = Path("src")
+          failed = []
+          for path in sorted(root.rglob("*.py")):
+              if path.name == "__init__.py":
+                  continue
+              mod_name = ".".join(path.relative_to(root).with_suffix("").parts)
+              try:
+                  importlib.import_module(mod_name)
+                  print(f"OK   {mod_name}")
+              except Exception:
+                  print(f"FAIL {mod_name}")
+                  traceback.print_exc()
+                  failed.append(mod_name)
+
+          if failed:
+              print(f"\n{len(failed)} module(s) failed to import: {failed}")
+              sys.exit(1)
+          EOF
