@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-background": "#dfe2ee", "secondary-fixed-dim": "#00dce6", "surface": "#0f131c", "on-primary-fixed-variant": "#004e5c", "on-primary": "#003640", "outline": "#869397", "outline-variant": "#3d494c", "on-primary-fixed": "#001f26", "on-secondary-container": "#006a6f", "on-error": "#690005", "on-surface-variant": "#bcc9cd", "secondary": "#dcfdff", "surface-tint": "#4cd7f6", "primary": "#4cd7f6", "surface-bright": "#353942", "on-tertiary-fixed": "#002113", "surface-container": "#1c2028", "tertiary-container": "#1bbd85", "inverse-surface": "#dfe2ee", "tertiary-fixed-dim": "#4edea3", "tertiary": "#4edea3", "on-secondary-fixed": "#002022", "on-error-container": "#ffdad6", "error-container": "#93000a", "error": "#ffb4ab", "secondary-container": "#00f1fd", "on-secondary": "#00373a", "background": "#0f131c", "primary-container": "#06b6d4", "on-primary-container": "#00424f", "on-secondary-fixed-variant": "#004f53", "on-tertiary-fixed-variant": "#005236", "primary-fixed-dim": "#4cd7f6", "surface-container-highest": "#31353e", "on-surface": "#dfe2ee", "surface-dim": "#0f131c", "surface-container-high": "#262a33", "primary-fixed": "#acedff", "inverse-on-surface": "#2c3039", "inverse-primary": "#00687a", "on-tertiary-container": "#00452e", "on-tertiary": "#003824", "secondary-fixed": "#6ff6ff", "surface-container-lowest": "#0a0e16", "surface-variant": "#31353e", "surface-container-low": "#181c24", "tertiary-fixed": "#6ffbbe" }, "borderRadius": { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, "spacing": { "margin-desktop": "2rem", "margin-tablet": "1.5rem", "gutter": "1rem", "space-xs": "0.25rem", "margin": "1rem", "gutter-desktop": "1.5rem", "space-sm": "0.5rem", "space-xl": "2rem", "space-md": "1rem", "space-lg": "1.5rem" }, "fontFamily": { "headline-md": [ "Space Grotesk" ], "headline-sm": [ "Space Grotesk" ], "body-lg": [ "Inter" ], "display-lg-mobile": [ "Space Grotesk" ], "label-lg": [ "Space Grotesk" ], "headline-lg-mobile": [ "Space Grotesk" ], "body-md": [ "Inter" ], "body-sm": [ "Inter" ], "headline-lg": [ "Space Grotesk" ], "display-lg": [ "Space Grotesk" ], "label-sm": [ "Space Grotesk" ], "label-md": [ "Space Grotesk" ] }, "fontSize": { "headline-md": [ "24px", { "lineHeight": "32px", "letterSpacing": "0em", "fontWeight": "600" } ], "headline-sm": [ "18px", { "lineHeight": "26px", "letterSpacing": "0.01em", "fontWeight": "600" } ], "body-lg": [ "16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" } ], "display-lg-mobile": [ "32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" } ], "label-lg": [ "14px", { "lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600" } ], "headline-lg-mobile": [ "24px", { "lineHeight": "32px", "letterSpacing": "0em", "fontWeight": "600" } ], "body-md": [ "14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "400" } ], "body-sm": [ "12px", { "lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "400" } ], "headline-lg": [ "32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" } ], "display-lg": [ "48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" } ], "label-sm": [ "10px", { "lineHeight": "14px", "letterSpacing": "0.08em", "fontWeight": "700" } ], "label-md": [ "12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" } ] } } } };</script></head><body class="bg-background font-body-md text-on-surface antialiased selection:bg-primary selection:text-on-primary"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest/80 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.4)]"><div class="h-20 w-full px-margin-desktop flex items-center justify-between gap-space-lg"><div class="flex items-center gap-space-md shrink-0"><img alt="CyberXAI Shield Emblem" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1WDTIFQLVPqbHosRNwTgXlTihR0B3RtJT_9K7ji0h0I2lPvCw0uOrH8B0T04y-XfRAVQGbc1Q-lontqllIKS3MhF2Mg8tdJ5bhC-OsRYQ028rbeVQoh4MN-BEUprKQaOC-ESZAD_a-c3ya_FMDzOvfaFS6C7rs7E-sMRbsUCjocOoQkX9ETLLTWu4ho1DcEsOh3hqt-z15GFna2st9WgLMa4OXZlRVNra3CkX1qr8iY79QiaRHYJnwSfs4"/><div class="flex flex-col"><div class="flex items-center gap-space-sm"><span class="font-headline-sm text-headline-sm tracking-tight text-on-surface uppercase">CyberXAI</span><span class="font-label-sm text-label-sm text-primary uppercase px-space-xs py-0.5 rounded bg-surface-container-high">// Neural Threat Intel</span></div><div class="flex items-center gap-space-sm font-label-sm text-label-sm"><span class="flex items-center gap-1 text-tertiary"><span class="h-1.5 w-1.5 rounded-full bg-tertiary animate-pulse"></span>ACTIVE DEFENSE [NOMINAL]</span><span class="text-outline-variant">|</span><span class="text-on-surface-variant font-body-sm text-body-sm">SMOTE + Soft Voting Online</span></div></div></div><nav class="hidden xl:flex items-center gap-space-xs p-1 bg-surface-container-low rounded-lg" data-active-classes="bg-primary-container text-on-primary-container font-label-md text-label-md rounded"><a class="px-space-md py-space-sm rounded font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors whitespace-nowrap" data-path="threat-analyzer-3d-hud" href="#">Threat Analyzer &amp; 3D HUD</a><a class="px-space-md py-space-sm rounded font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors whitespace-nowrap" data-path="url-static-pipeline-module-b" href="#">URL Static Pipeline (Module B)</a><a class="px-space-md py-space-sm rounded font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors whitespace-nowrap" data-path="dynamic-malware-forensics-module-a" href="#">Dynamic Malware Forensics (Module A)</a><a class="px-space-md py-space-sm rounded font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors whitespace-nowrap" data-path="shap-explainability-explorer" href="#">SHAP Explainability Explorer</a><a class="px-space-md py-space-sm rounded font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors whitespace-nowrap" data-path="incident-response" href="#">Incident Response</a></nav><div class="flex items-center gap-space-md shrink-0"><div class="hidden md:flex items-center gap-space-md px-space-md py-space-xs rounded bg-surface-container-low"><div class="flex flex-col text-right"><span class="font-label-sm text-label-sm text-primary tracking-wider">SecOps-Alpha</span><span class="font-body-sm text-body-sm text-on-surface-variant">LATENCY: <span class="text-tertiary">14ms</span></span></div><div class="h-6 w-px bg-surface-container-highest"></div><div class="flex items-center gap-1.5 font-label-md text-label-md text-on-surface tracking-widest"><span class="material-symbols-outlined text-[16px] text-primary">schedule</span><span>14:02:18 UTC</span></div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-[0_0_12px_rgba(76,215,246,0.35)]"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="w-full pt-20 bg-background"><div class="flex flex-col w-full">
+<div class="w-full px-margin-desktop py-space-md flex flex-col gap-space-lg">
+<!-- Top Tactical Status Strip -->
+<div class="w-full flex flex-col lg:flex-row items-start lg:items-center justify-between gap-space-md p-space-md rounded-xl bg-surface-container-low shadow-xl">
+<div class="flex flex-wrap items-center gap-space-md">
+<div class="flex items-center gap-space-sm px-space-md py-space-xs rounded bg-surface-container-highest">
+<span class="h-2 w-2 rounded-full bg-primary animate-ping"></span>
+<span class="font-label-sm text-label-sm text-primary tracking-widest uppercase">HUD MATRIX v4.9.1</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight">Hybrid Multi-Class URL &amp; Malware Detection Engine</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-space-sm">
+<span>651,199 URL records trained</span>
+<span class="text-outline-variant">•</span>
+<span>CIC-MalMem-2022 Forensics Active</span>
+<span class="text-outline-variant">•</span>
+<span class="text-secondary-container">Soft Voting Ensemble [RF + XGBoost + LR + NB]</span>
+</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs self-stretch sm:self-auto justify-end">
+<span class="px-space-md py-space-xs rounded bg-surface-container-high font-label-md text-label-md text-tertiary flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">verified_user</span>
+          SMOTE BALANCED
+        </span>
+<span class="px-space-md py-space-xs rounded bg-surface-container-high font-label-md text-label-md text-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">hub</span>
+          TOP 20 OPTUNA TUNED
+        </span>
+</div>
+</div>
+<!-- 3D Interactive Cyber Tactical Stage (Live Threat Topology Visualizer) -->
+<div class="relative w-full rounded-xl overflow-hidden bg-surface-container-lowest border border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.18)] p-space-xs flex flex-col">
+<div class="relative w-full h-[460px] rounded-lg overflow-hidden bg-slate-950/80">
+<!-- STITCH_THREEJS_START:ANIMATION_8 class="w-full h-[460px] block cursor-grab active:cursor-grabbing" -->
+<div class="w-full h-[460px] block cursor-grab active:cursor-grabbing" style="display:block;">
+<script src="https://ajax.googleapis.com/ajax/libs/threejs/r125/three.min.js"></script>
+<div id="threejs-container-ANIMATION_8" style="width:100%;height:100%"></div>
+<script>
+(function() {
+  const container = document.getElementById('threejs-container-ANIMATION_8');
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const width = container.clientWidth || window.innerWidth;
+const height = container.clientHeight || 420;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+camera.position.set(22, 16, 26);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+renderer.setSize(width, height);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+// Lighting
+const ambLight = new THREE.AmbientLight(0x0a192f, 2.0);
+scene.add(ambLight);
+
+const dirLight = new THREE.DirectionalLight(0x00f2fe, 3.0);
+dirLight.position.set(20, 30, 20);
+scene.add(dirLight);
+
+const pLight = new THREE.PointLight(0xef4444, 2.5, 50);
+pLight.position.set(-15, 10, -10);
+scene.add(pLight);
+
+const mainGroup = new THREE.Group();
+scene.add(mainGroup);
+
+// 1. Grid Plane & Hyperplane Decision Surface (3D Feature Space: Lexical x N-Gram x Host Entropy)
+const gridHelper = new THREE.GridHelper(28, 28, 0x06b6d4, 0x1e293b);
+gridHelper.position.y = -4;
+mainGroup.add(gridHelper);
+
+// Non-linear Decision Boundary / 3D Manifold Surface
+const surfaceGeo = new THREE.PlaneGeometry(24, 24, 24, 24);
+surfaceGeo.rotateX(-Math.PI / 2);
+const pos = surfaceGeo.attributes.position;
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i);
+  const z = pos.getZ(i);
+  // Multi-modal hyperbolic decision manifold
+  const y = Math.sin(x * 0.3) * Math.cos(z * 0.3) * 2.2 + Math.sin(Math.sqrt(x*x + z*z) * 0.5) * 1.2;
+  pos.setY(i, y - 2.5);
+}
+surfaceGeo.computeVertexNormals();
+
+const surfaceMat = new THREE.MeshLambertMaterial({
+  color: 0x083344,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.45
+});
+const decisionSurface = new THREE.Mesh(surfaceGeo, surfaceMat);
+mainGroup.add(decisionSurface);
+
+// 2. Multi-class 3D Clustered Threat Nodes (Phishing, Malware, Defacement, Benign)
+// Classes: 0: Benign (green/cyan), 1: Phishing (red/amber), 2: Malware (magenta/purple), 3: Defacement (blue)
+const clusterData = [
+  { count: 45, center: new THREE.Vector3(7, 3, 6), color: 0xef4444, size: 0.45, type: 'box', label: 'Phishing' },
+  { count: 35, center: new THREE.Vector3(-7, 2, -6), color: 0xec4899, size: 0.45, type: 'octa', label: 'Malware' },
+  { count: 25, center: new THREE.Vector3(-6, -1, 7), color: 0x3b82f6, size: 0.4, type: 'tetra', label: 'Defacement' },
+  { count: 55, center: new THREE.Vector3(4, -2, -5), color: 0x10b981, size: 0.35, type: 'sphere', label: 'Benign' }
+];
+
+const nodes = [];
+const clusterGroup = new THREE.Group();
+mainGroup.add(clusterGroup);
+
+clusterData.forEach((cluster) => {
+  for (let i = 0; i < cluster.count; i++) {
+    let geo;
+    if (cluster.type === 'box') geo = new THREE.BoxGeometry(cluster.size, cluster.size, cluster.size);
+    else if (cluster.type === 'octa') geo = new THREE.OctahedronGeometry(cluster.size);
+    else if (cluster.type === 'tetra') geo = new THREE.TetrahedronGeometry(cluster.size);
+    else geo = new THREE.SphereGeometry(cluster.size * 0.8, 8, 8);
+
+    const mat = new THREE.MeshLambertMaterial({
+      color: cluster.color,
+      transparent: true,
+      opacity: 0.85
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    const spread = 3.2;
+    const px = cluster.center.x + (Math.random() - 0.5) * spread;
+    const py = cluster.center.y + (Math.random() - 0.5) * spread * 0.8;
+    const pz = cluster.center.z + (Math.random() - 0.5) * spread;
+
+    mesh.position.set(px, py, pz);
+    mesh.userData = {
+      basePos: new THREE.Vector3(px, py, pz),
+      speed: 0.5 + Math.random() * 0.8,
+      phase: Math.random() * Math.PI * 2,
+      cluster: cluster.label
+    };
+
+    clusterGroup.add(mesh);
+    nodes.push(mesh);
+  }
+});
+
+// 3. Real-Time Stream Simulation Trajectory (Flowing Test URL packets classified across manifold)
+const streamParticlesCount = 20;
+const streamGroup = new THREE.Group();
+mainGroup.add(streamGroup);
+
+const packetGeo = new THREE.SphereGeometry(0.35, 12, 12);
+const packetMatPhish = new THREE.MeshBasicMaterial({ color: 0xff2a5f });
+const packetMatBenign = new THREE.MeshBasicMaterial({ color: 0x00f2fe });
+
+const streamPackets = [];
+for (let i = 0; i < streamParticlesCount; i++) {
+  const isPhish = Math.random() > 0.45;
+  const pMesh = new THREE.Mesh(packetGeo, isPhish ? packetMatPhish : packetMatBenign);
+  pMesh.userData = {
+    progress: (i / streamParticlesCount),
+    speed: 0.004 + Math.random() * 0.003,
+    start: new THREE.Vector3(-14, 8, 14),
+    target: isPhish ? new THREE.Vector3(7, 3, 6) : new THREE.Vector3(4, -2, -5),
+    isPhish: isPhish
+  };
+  streamGroup.add(pMesh);
+  streamPackets.push(pMesh);
+}
+
+// 4. Decision Vector Axis Indicators (X: TF-IDF N-Gram, Y: Shannon Entropy, Z: Lexical Path)
+const axisMat = new THREE.LineBasicMaterial({ color: 0x00f2fe, opacity: 0.5, transparent: true });
+const makeAxis = (from, to, colorHex) => {
+  const geom = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const mat = new THREE.LineBasicMaterial({ color: colorHex, linewidth: 2 });
+  return new THREE.Line(geom, mat);
+};
+
+mainGroup.add(makeAxis(new THREE.Vector3(0, -4, 0), new THREE.Vector3(14, -4, 0), 0x00f2fe)); // X
+mainGroup.add(makeAxis(new THREE.Vector3(0, -4, 0), new THREE.Vector3(0, 10, 0), 0x10b981));  // Y
+mainGroup.add(makeAxis(new THREE.Vector3(0, -4, 0), new THREE.Vector3(0, -4, 14), 0xa855f7)); // Z
+
+// Orbit controls via Mouse
+let isDragging = false;
+let previousMousePosition = { x: 0, y: 0 };
+
+container.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  previousMousePosition = { x: e.clientX, y: e.clientY };
+});
+
+window.addEventListener('mouseup', () => { isDragging = false; });
+
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) {
+    // Subtle auto-tilt parallax
+    const nx = (e.clientX - window.innerWidth / 2) * 0.0003;
+    const ny = (e.clientY - window.innerHeight / 2) * 0.0003;
+    mainGroup.rotation.y = nx * 1.5;
+    mainGroup.rotation.x = ny * 0.8;
+    return;
+  }
+  const deltaX = e.clientX - previousMousePosition.x;
+  const deltaY = e.clientY - previousMousePosition.y;
+
+  mainGroup.rotation.y += deltaX * 0.008;
+  mainGroup.rotation.x += deltaY * 0.008;
+
+  previousMousePosition = { x: e.clientX, y: e.clientY };
+});
+
+// Resize listener
+window.addEventListener('resize', () => {
+  const w = container.clientWidth || window.innerWidth;
+  const h = container.clientHeight || 420;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+// Animation Loop
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const time = clock.getElapsedTime();
+
+  if (!isDragging) {
+    mainGroup.rotation.y += 0.003;
+  }
+
+  // Floating oscillation of feature nodes
+  nodes.forEach((n) => {
+    n.position.y = n.userData.basePos.y + Math.sin(time * n.userData.speed + n.userData.phase) * 0.3;
+    n.rotation.x += 0.01;
+    n.rotation.y += 0.015;
+  });
+
+  // Animated URL Stream Packets along trajectory
+  streamPackets.forEach((p) => {
+    p.userData.progress += p.userData.speed;
+    if (p.userData.progress > 1) {
+      p.userData.progress = 0;
+    }
+    const prog = p.userData.progress;
+    // Curved trajectory path
+    p.position.lerpVectors(p.userData.start, p.userData.target, prog);
+    p.position.y += Math.sin(prog * Math.PI) * 4.0;
+  });
+
+  // Pulse decision surface wireframe
+  surfaceMat.opacity = 0.35 + Math.sin(time * 2) * 0.12;
+
+  renderer.render(scene, camera);
+}
+animate();
+
+})();
+</script>
+</div>
+<!-- STITCH_THREEJS_END:ANIMATION_8 -->
+<!-- Top Left: Visualizer Title & Topology Spec -->
+<div class="absolute top-4 left-4 pointer-events-none flex flex-col gap-1.5 p-3 rounded-lg bg-surface-container-lowest/85 backdrop-blur-md border border-cyan-500/20 shadow-lg">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px] animate-pulse">radar</span>
+<span class="font-label-sm text-label-sm text-primary tracking-wider uppercase">Live Threat Topology Visualizer</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">3D HYPERPLANE SIMULATION GRAPH // DYNAMIC FEATURE MANIFOLD</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
+<span>Feature Coordinates:</span>
+<span class="text-primary font-mono font-medium">TF-IDF N-Gram (X)</span>
+<span class="text-outline">×</span>
+<span class="text-tertiary font-mono font-medium">Shannon Entropy (Y)</span>
+<span class="text-outline">×</span>
+<span class="text-secondary-fixed-dim font-mono font-medium">Lexical Path (Z)</span>
+</span>
+</div>
+<!-- Top Right: Real-time Packet Ingestion Tracer Indicator -->
+<div class="absolute top-4 right-4 pointer-events-none flex flex-col items-end gap-1.5 p-3 rounded-lg bg-surface-container-lowest/85 backdrop-blur-md border border-cyan-500/20 shadow-lg">
+<div class="flex items-center gap-2">
+<span class="h-2.5 w-2.5 rounded-full bg-secondary-container animate-ping"></span>
+<span class="font-label-sm text-label-sm text-secondary-container font-semibold tracking-wider uppercase">STREAM INGESTION TRACER: ACTIVE</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">PACKETS ROUTING TO DECISION MANIFOLD</span>
+</div>
+<!-- Bottom Left: Camera / Interaction Hint -->
+<div class="absolute bottom-4 left-4 pointer-events-none flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container-lowest/80 backdrop-blur-md border border-outline-variant/40">
+<span class="material-symbols-outlined text-primary text-[18px]">touch_app</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider uppercase">DRAG TO ROTATE 3D MANIFOLD • MOUSE TRACK PARALLAX</span>
+</div>
+<!-- Bottom Right: Interactive Multi-Class Cluster Legends with Glow Dots -->
+<div class="absolute bottom-4 right-4 pointer-events-none flex flex-wrap items-center gap-2.5 p-2.5 rounded-lg bg-surface-container-lowest/90 backdrop-blur-md border border-cyan-500/30 shadow-xl">
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-high/60">
+<span class="h-2.5 w-2.5 rounded-full bg-error shadow-[0_0_8px_rgba(239,68,68,0.9)] animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-on-surface font-mono">🔴 Cluster 0xEF: Phishing Vectors (45 Nodes)</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-high/60">
+<span class="h-2.5 w-2.5 rounded-full bg-[#ec4899] shadow-[0_0_8px_rgba(236,72,153,0.9)]"></span>
+<span class="font-label-sm text-label-sm text-on-surface font-mono">🟣 Cluster 0x7A: Malware Executables (35 Nodes)</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-high/60">
+<span class="h-2.5 w-2.5 rounded-full bg-[#3b82f6] shadow-[0_0_8px_rgba(59,130,246,0.9)]"></span>
+<span class="font-label-sm text-label-sm text-on-surface font-mono">🔵 Cluster 0x3C: Defacement (25 Nodes)</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-high/60">
+<span class="h-2.5 w-2.5 rounded-full bg-tertiary shadow-[0_0_8px_rgba(78,222,163,0.9)]"></span>
+<span class="font-label-sm text-label-sm text-on-surface font-mono">🟢 Cluster 0x1A: Benign Baseline (55 Nodes)</span>
+</div>
+</div>
+</div>
+<!-- Live Telemetry KPI Strip directly attached beneath canvas -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-xs mt-space-xs">
+<div class="p-space-md rounded-lg bg-surface-container flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Module B URL Accuracy</span>
+<span class="font-headline-lg text-headline-lg text-primary tracking-tight">89.8%</span>
+<span class="font-body-sm text-body-sm text-tertiary">0.97 Macro ROC-AUC</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">link</span>
+</div>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Module A Binary Detection</span>
+<span class="font-headline-lg text-headline-lg text-tertiary tracking-tight">100.0%</span>
+<span class="font-body-sm text-body-sm text-tertiary">1.00 Perfect ROC-AUC</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined">security</span>
+</div>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Module A Family Class.</span>
+<span class="font-headline-lg text-headline-lg text-secondary-container tracking-tight">87.8%</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Ransomware / Spy / Trojan</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-secondary-container">
+<span class="material-symbols-outlined">memory</span>
+</div>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Inference Velocity</span>
+<span class="font-headline-lg text-headline-lg text-on-surface tracking-tight">14.2<span class="text-headline-sm font-label-md text-primary">ms</span></span>
+<span class="font-body-sm text-body-sm text-tertiary">Zero Queuing / Direct GPU</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">speed</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Live URL & Payload Inspection Commander Bar -->
+<div class="flex flex-col gap-space-sm p-space-md rounded-xl bg-surface-container-low shadow-xl">
+<div class="flex flex-wrap items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary">terminal</span>
+<span class="font-label-lg text-label-lg text-on-surface tracking-wide uppercase">Realtime Telemetry Ingestion Bar</span>
+</div>
+<div class="flex flex-wrap items-center gap-space-xs">
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-on-surface font-label-sm text-label-sm transition-all flex items-center gap-1" id="btn-sample-phish">
+<span class="h-1.5 w-1.5 rounded-full bg-error"></span> Phishing Sample
+          </button>
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-on-surface font-label-sm text-label-sm transition-all flex items-center gap-1" id="btn-sample-malware">
+<span class="h-1.5 w-1.5 rounded-full bg-error"></span> Malware Sample
+          </button>
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-on-surface font-label-sm text-label-sm transition-all flex items-center gap-1" id="btn-sample-deface">
+<span class="h-1.5 w-1.5 rounded-full bg-secondary-fixed-dim"></span> Defacement Sample
+          </button>
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-on-surface font-label-sm text-label-sm transition-all flex items-center gap-1" id="btn-sample-benign">
+<span class="h-1.5 w-1.5 rounded-full bg-tertiary"></span> Benign Sample
+          </button>
+</div>
+</div>
+<div class="flex flex-col sm:flex-row items-center gap-space-sm mt-space-xs">
+<div class="relative flex-1 w-full">
+<span class="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant text-[20px]">link</span>
+<input class="w-full pl-11 pr-4 py-3 rounded-lg bg-surface-container text-on-surface font-body-md text-body-md outline-none focus:bg-surface-container-high transition-colors shadow-inner" id="target-input-field" placeholder="Enter target URL, FQDN, or CIC-MalMem memory hash..." type="text" value="http://paypal-secure-login.tk/verify/account"/>
+</div>
+<button class="w-full sm:w-auto px-space-xl py-3 rounded-lg bg-primary-container hover:bg-secondary-container text-on-primary-container font-label-lg text-label-lg uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(6,182,212,0.4)] hover:shadow-[0_0_32px_rgba(0,241,253,0.6)] transition-all" id="btn-execute-scan">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+<span>Execute Deep Scan &amp; SHAP Explain</span>
+</button>
+</div>
+</div>
+<!-- Split Grid Layout: Multi-Class Prediction HUD + SHAP Explainability Engine -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-space-lg">
+<!-- Left Column: Multi-Class Prediction & Confidence Matrix (5 cols) -->
+<div class="xl:col-span-5 flex flex-col gap-space-md">
+<!-- Master Classification Card -->
+<div class="p-space-lg rounded-xl bg-surface-container-low flex flex-col gap-space-md shadow-xl">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Multi-Class Decision Engine</span>
+<span class="px-space-sm py-0.5 rounded font-label-sm text-label-sm text-error bg-error-container/40 flex items-center gap-1.5" id="threat-badge-pulse">
+<span class="h-2 w-2 rounded-full bg-error animate-pulse"></span>
+              CRITICAL THREAT
+            </span>
+</div>
+<div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-space-xs p-space-md rounded-lg bg-surface-container">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Predicted Class</span>
+<span class="font-headline-lg text-headline-lg text-error tracking-tight" id="predicted-class-name">PHISHING</span>
+</div>
+<div class="flex flex-col sm:text-right">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Confidence</span>
+<span class="font-headline-lg text-headline-lg text-primary tracking-tight" id="predicted-confidence-val">96.4%</span>
+</div>
+</div>
+<!-- Multi-Class Distribution Bars -->
+<div class="flex flex-col gap-space-sm pt-space-xs">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Multi-Class Probability Distribution</span>
+<div class="flex flex-col gap-space-xs">
+<div class="flex justify-between font-label-sm text-label-sm">
+<span class="text-error">Phishing Payload</span>
+<span class="text-on-surface" id="prob-val-phishing">96.4%</span>
+</div>
+<div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-error transition-all duration-700" id="prob-bar-phishing" style="width: 96.4%;"></div>
+</div>
+</div>
+<div class="flex flex-col gap-space-xs">
+<div class="flex justify-between font-label-sm text-label-sm">
+<span class="text-on-surface-variant">Malware Injection / Dropper</span>
+<span class="text-on-surface" id="prob-val-malware">2.1%</span>
+</div>
+<div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-secondary-fixed-dim transition-all duration-700" id="prob-bar-malware" style="width: 2.1%;"></div>
+</div>
+</div>
+<div class="flex flex-col gap-space-xs">
+<div class="flex justify-between font-label-sm text-label-sm">
+<span class="text-on-surface-variant">Benign Traffic Baseline</span>
+<span class="text-on-surface" id="prob-val-benign">1.2%</span>
+</div>
+<div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-tertiary transition-all duration-700" id="prob-bar-benign" style="width: 1.2%;"></div>
+</div>
+</div>
+<div class="flex flex-col gap-space-xs">
+<div class="flex justify-between font-label-sm text-label-sm">
+<span class="text-on-surface-variant">Website Defacement</span>
+<span class="text-on-surface" id="prob-val-deface">0.3%</span>
+</div>
+<div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-primary transition-all duration-700" id="prob-bar-deface" style="width: 0.3%;"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Ensemble Model Consensus Decomposition -->
+<div class="p-space-lg rounded-xl bg-surface-container-low flex flex-col gap-space-md shadow-xl">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Soft Voting Ensemble Weights</span>
+<span class="font-label-sm text-label-sm text-secondary-container">N=4 Classifiers</span>
+</div>
+<div class="grid grid-cols-2 gap-space-sm">
+<div class="p-space-sm rounded-lg bg-surface-container flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface">Random Forest</span>
+<span class="font-label-md text-label-md text-primary">98.0%</span>
+</div>
+<div class="w-full h-1.5 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-primary" style="width: 98%;"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">n_estimators=300</span>
+</div>
+<div class="p-space-sm rounded-lg bg-surface-container flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface">XGBoost Heavy</span>
+<span class="font-label-md text-label-md text-primary">96.0%</span>
+</div>
+<div class="w-full h-1.5 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-primary" style="width: 96%;"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">eta=0.08, max_depth=8</span>
+</div>
+<div class="p-space-sm rounded-lg bg-surface-container flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface">Logistic Reg.</span>
+<span class="font-label-md text-label-md text-secondary-fixed-dim">94.0%</span>
+</div>
+<div class="w-full h-1.5 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-secondary-fixed-dim" style="width: 94%;"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">L2 regularization, C=1.4</span>
+</div>
+<div class="p-space-sm rounded-lg bg-surface-container flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface">Naive Bayes</span>
+<span class="font-label-md text-label-md text-on-surface-variant">88.0%</span>
+</div>
+<div class="w-full h-1.5 rounded bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-outline" style="width: 88%;"></div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Multinomial priors</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Interactive SHAP Feature Attribution Inspector (7 cols) -->
+<div class="xl:col-span-7 flex flex-col gap-space-md">
+<div class="p-space-lg rounded-xl bg-surface-container-low flex flex-col gap-space-md shadow-xl flex-1">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-xs">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">query_stats</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface">SHAP Feature Attribution (Module D)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Game-Theoretic Marginal Shapley Importance φ</span>
+</div>
+</div>
+<!-- Pipeline Mode Switcher Button -->
+<button class="px-space-md py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-md text-label-md flex items-center gap-2 transition-all self-start sm:self-auto" id="toggle-pipeline-view">
+<span class="material-symbols-outlined text-[18px]" id="pipeline-icon">swap_horiz</span>
+<span id="pipeline-switch-label">Switch to Module A Dynamic Memory View</span>
+</button>
+</div>
+<!-- SHAP Waterfall & Contribution Container -->
+<div class="flex flex-col gap-space-md" id="shap-content-pane">
+<div class="p-space-md rounded-lg bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-space-md">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Base Value E[f(x)]: <strong class="text-on-surface">0.12</strong></span>
+<span class="text-outline-variant">|</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Model Output f(x): <strong class="text-error">0.964</strong></span>
+</div>
+<span class="font-label-sm text-label-sm text-error uppercase px-2 py-0.5 rounded bg-error-container/30">+0.844 Net Malicious Push</span>
+</div>
+<!-- Dynamic Waterfall Bars List -->
+<div class="flex flex-col gap-space-sm" id="attribution-bars-list">
+<!-- Feature 1 -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">char_ngram_tf_idf_secure_login</span>
+<span class="text-error font-label-md">+0.380 φ</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-error" style="width: 76%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">TFIDF=0.88</span>
+</div>
+</div>
+<!-- Feature 2 -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">host_tld_suspicious (.tk)</span>
+<span class="text-error font-label-md">+0.290 φ</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-error" style="width: 58%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">TLD=1.0</span>
+</div>
+</div>
+<!-- Feature 3 -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">lexical_path_depth</span>
+<span class="text-error font-label-md">+0.180 φ</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-error" style="width: 36%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">Depth=3</span>
+</div>
+</div>
+<!-- Feature 4 -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">keyword_verify_account</span>
+<span class="text-error font-label-md">+0.160 φ</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-error" style="width: 32%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">Found=1</span>
+</div>
+</div>
+<!-- Feature 5 -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">absence_of_valid_whois_record</span>
+<span class="text-error font-label-md">+0.120 φ</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-error" style="width: 24%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">Age&lt;2d</span>
+</div>
+</div>
+<!-- Feature 6 -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">https_token_in_subdomain</span>
+<span class="text-error font-label-md">+0.090 φ</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-error" style="width: 18%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">Flag=True</span>
+</div>
+</div>
+<!-- Feature 7: Counterweight Benign Indicator -->
+<div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-on-surface font-body-sm">content_encoding_gzip_standard</span>
+<span class="text-tertiary font-label-md">-0.046 φ (Benign Pull)</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-tertiary" style="width: 9%;"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant w-16 text-right">Standard</span>
+</div>
+</div>
+</div>
+<!-- Explainability Narrative Callout -->
+<div class="p-space-md rounded-lg bg-surface-container-highest/60 flex items-start gap-space-md">
+<span class="material-symbols-outlined text-primary text-[24px] shrink-0 mt-0.5">smart_toy</span>
+<div class="flex flex-col gap-1">
+<span class="font-label-md text-label-md text-on-surface">Neural XAI Attribution Summary</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant" id="attribution-summary-text">
+                  The model identified strong token mimicry (<code class="text-primary font-body-sm">secure_login</code>) juxtaposed with high-risk top-level domain (<code class="text-primary font-body-sm">.tk</code>). Phishing intent is further corroborated by deceptive sub-domain structuring simulating PayPal authentication pathways.
+                </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Section: Real-time Incident Telemetry Stream & Sandbox Trigger (Module C) -->
+<div class="flex flex-col gap-space-md p-space-lg rounded-xl bg-surface-container-low shadow-xl">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary">dynamic_form</span>
+<div>
+<span class="font-headline-sm text-headline-sm text-on-surface">Autonomous Telemetry Feed &amp; Containment Pipeline</span>
+<div class="flex items-center gap-2">
+<span class="h-2 w-2 rounded-full bg-tertiary animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-tertiary uppercase">Realtime Gradient-Boosting Sentinel Active</span>
+</div>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-space-sm">
+<button class="px-space-md py-2.5 rounded-lg bg-primary-container hover:bg-secondary-container text-on-primary-container font-label-md text-label-md uppercase tracking-wider flex items-center gap-2 transition-all shadow-[0_0_16px_rgba(6,182,212,0.3)]" id="btn-escalate-sandbox">
+<span class="material-symbols-outlined text-[18px]">view_in_ar</span>
+<span>Escalate to Headless DOM Sandbox (Module C)</span>
+</button>
+<button class="px-space-md py-2.5 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-md text-label-md flex items-center gap-2 transition-colors" id="btn-download-shap">
+<span class="material-symbols-outlined text-[18px]">download</span>
+<span>SHAP Watermark JSON/PDF</span>
+</button>
+<button class="px-space-md py-2.5 rounded-lg bg-error-container hover:bg-error text-on-error-container hover:text-on-error font-label-md text-label-md uppercase tracking-wider flex items-center gap-2 transition-colors" id="btn-isolate-endpoint">
+<span class="material-symbols-outlined text-[18px]">block</span>
+<span>Isolate Host</span>
+</button>
+</div>
+</div>
+<!-- Live CLI Telemetry Output Terminal -->
+<div class="w-full rounded-lg bg-surface-container-lowest p-space-md font-body-sm text-body-sm flex flex-col gap-1 overflow-x-auto shadow-inner">
+<div class="flex items-center gap-2 text-outline">
+<span class="text-tertiary">[+]</span>
+<span>14:02:18.042 UTC</span>
+<span class="text-secondary-fixed-dim">[MODULE_B_EXTRACTOR]</span>
+<span>Ingested target string → Length: 46 chars | 3 tokens | Entropy: 3.82 bits</span>
+</div>
+<div class="flex items-center gap-2 text-outline">
+<span class="text-tertiary">[+]</span>
+<span>14:02:18.048 UTC</span>
+<span class="text-secondary-fixed-dim">[SMOTE_BALANCER]</span>
+<span>Applied synthetic minority interpolation: Class [Phishing=1.00, Defacement=1.00, Benign=1.00]</span>
+</div>
+<div class="flex items-center gap-2 text-outline">
+<span class="text-primary">[#]</span>
+<span>14:02:18.052 UTC</span>
+<span class="text-primary">[OPTUNA_ENSEMBLE]</span>
+<span>Soft-Voting weights calculated: RF: 0.32, XGB: 0.38, LR: 0.18, NB: 0.12</span>
+</div>
+<div class="flex items-center gap-2 text-outline">
+<span class="text-error">[!]</span>
+<span>14:02:18.056 UTC</span>
+<span class="text-error">[SHAP_EXPLAINER]</span>
+<span class="text-on-surface" id="cli-shap-alert">Top threat driver: char_ngram_tf_idf_secure_login (+0.380 φ) превысил порог риска &gt; 0.25</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+    (function() {
+      const inputField = document.getElementById('target-input-field');
+      const btnScan = document.getElementById('btn-execute-scan');
+      const predictedClassName = document.getElementById('predicted-class-name');
+      const predictedConfidence = document.getElementById('predicted-confidence-val');
+      const threatBadge = document.getElementById('threat-badge-pulse');
+      const barPhish = document.getElementById('prob-bar-phishing');
+      const barMal = document.getElementById('prob-bar-malware');
+      const barBenign = document.getElementById('prob-bar-benign');
+      const barDeface = document.getElementById('prob-bar-deface');
+      const valPhish = document.getElementById('prob-val-phishing');
+      const valMal = document.getElementById('prob-val-malware');
+      const valBenign = document.getElementById('prob-val-benign');
+      const valDeface = document.getElementById('prob-val-deface');
+      const summaryText = document.getElementById('attribution-summary-text');
+      const toggleViewBtn = document.getElementById('toggle-pipeline-view');
+      const switchLabel = document.getElementById('pipeline-switch-label');
+      const barsList = document.getElementById('attribution-bars-list');
+      const cliAlert = document.getElementById('cli-shap-alert');
+
+      let currentMode = 'URL'; // 'URL' or 'MEMORY'
+
+      const samples = {
+        phishing: {
+          url: 'http://paypal-secure-login.tk/verify/account',
+          cls: 'PHISHING',
+          conf: '96.4%',
+          badgeColor: 'text-error bg-error-container/40',
+          badgeText: 'CRITICAL THREAT',
+          probs: { p: 96.4, m: 2.1, b: 1.2, d: 0.3 },
+          summary: 'The model identified strong token mimicry (secure_login) juxtaposed with high-risk top-level domain (.tk). Phishing intent is further corroborated by deceptive sub-domain structuring simulating PayPal authentication pathways.',
+          bars: [
+            { name: 'char_ngram_tf_idf_secure_login', phi: '+0.380', fill: '76%', color: 'bg-error', textCol: 'text-error', meta: 'TFIDF=0.88' },
+            { name: 'host_tld_suspicious (.tk)', phi: '+0.290', fill: '58%', color: 'bg-error', textCol: 'text-error', meta: 'TLD=1.0' },
+            { name: 'lexical_path_depth', phi: '+0.180', fill: '36%', color: 'bg-error', textCol: 'text-error', meta: 'Depth=3' },
+            { name: 'keyword_verify_account', phi: '+0.160', fill: '32%', color: 'bg-error', textCol: 'text-error', meta: 'Found=1' },
+            { name: 'absence_of_valid_whois_record', phi: '+0.120', fill: '24%', color: 'bg-error', textCol: 'text-error', meta: 'Age<2d' },
+            { name: 'content_encoding_gzip_standard', phi: '-0.046', fill: '9%', color: 'bg-tertiary', textCol: 'text-tertiary', meta: 'Standard' }
+          ]
+        },
+        malware: {
+          url: 'http://cdn-patch-update.cc/payload.bin.exe',
+          cls: 'MALWARE INJECTION',
+          conf: '98.2%',
+          badgeColor: 'text-error bg-error-container/40',
+          badgeText: 'CRITICAL MALWARE',
+          probs: { p: 1.1, m: 98.2, b: 0.4, d: 0.3 },
+          summary: 'High entropy executable binary detected via static lexical indicators. Obfuscated secondary file extension (.bin.exe) paired with transient unregistered dynamic hosting domain.',
+          bars: [
+            { name: 'executable_file_extension_flag', phi: '+0.440', fill: '88%', color: 'bg-error', textCol: 'text-error', meta: '.bin.exe' },
+            { name: 'entropy_score_path_high', phi: '+0.310', fill: '62%', color: 'bg-error', textCol: 'text-error', meta: 'Entropy=6.94' },
+            { name: 'cc_suspicious_tld_reputation', phi: '+0.210', fill: '42%', color: 'bg-error', textCol: 'text-error', meta: 'Reputation: -82' },
+            { name: 'raw_ip_subdomain_mapping', phi: '+0.150', fill: '30%', color: 'bg-error', textCol: 'text-error', meta: 'Direct IP' },
+            { name: 'asn_bulletproof_flag', phi: '+0.130', fill: '26%', color: 'bg-error', textCol: 'text-error', meta: 'AS59821' }
+          ]
+        },
+        defacement: {
+          url: 'http://gov-portal-notice.org/hacked_by_ghosts.html',
+          cls: 'DEFACEMENT',
+          conf: '91.7%',
+          badgeColor: 'text-secondary-fixed-dim bg-secondary-container/20',
+          badgeText: 'INTEGRITY TAMPER',
+          probs: { p: 3.2, m: 2.1, b: 3.0, d: 91.7 },
+          summary: 'Strong defacement signatures detected in lexical filename strings (hacked_by_*, pwned_*) with atypical server response structures and unusual HTML title signatures.',
+          bars: [
+            { name: 'defacement_keyword_ngram', phi: '+0.410', fill: '82%', color: 'bg-secondary-fixed-dim', textCol: 'text-secondary-fixed-dim', meta: 'hacked_by' },
+            { name: 'unusual_document_path_depth', phi: '+0.230', fill: '46%', color: 'bg-secondary-fixed-dim', textCol: 'text-secondary-fixed-dim', meta: 'Index=Root' },
+            { name: 'server_banner_alteration', phi: '+0.180', fill: '36%', color: 'bg-secondary-fixed-dim', textCol: 'text-secondary-fixed-dim', meta: 'Custom 0x0' },
+            { name: 'absence_of_ssl_chain', phi: '+0.110', fill: '22%', color: 'bg-secondary-fixed-dim', textCol: 'text-secondary-fixed-dim', meta: 'Plain HTTP' }
+          ]
+        },
+        benign: {
+          url: 'https://developer.mozilla.org/en-US/docs/Web',
+          cls: 'BENIGN / TRUSTED',
+          conf: '99.4%',
+          badgeColor: 'text-tertiary bg-tertiary-container/30',
+          badgeText: 'VERIFIED SAFE',
+          probs: { p: 0.2, m: 0.1, b: 99.4, d: 0.3 },
+          summary: 'Domain possesses impeccable historical longevity, verified Extended Validation TLS cryptographic certificates, clean WHOIS registration metadata, and expected structural lexical ratios.',
+          bars: [
+            { name: 'alexa_top_10k_whitelist_anchor', phi: '-0.420', fill: '84%', color: 'bg-tertiary', textCol: 'text-tertiary', meta: 'Rank #280' },
+            { name: 'valid_whois_age_gt_10y', phi: '-0.330', fill: '66%', color: 'bg-tertiary', textCol: 'text-tertiary', meta: 'Age=19.4y' },
+            { name: 'extended_validation_cert_ca', phi: '-0.240', fill: '48%', color: 'bg-tertiary', textCol: 'text-tertiary', meta: 'Let\'s Encrypt EV' },
+            { name: 'balanced_vowel_consonant_ratio', phi: '-0.150', fill: '30%', color: 'bg-tertiary', textCol: 'text-tertiary', meta: 'Ratio=0.42' }
+          ]
+        }
+      };
+
+      const memoryForensicsBars = [
+        { name: 'svcscan.nservices (anomalous dynamic svchost)', phi: '+0.360', fill: '72%', color: 'bg-error', textCol: 'text-error', meta: 'Count=412' },
+        { name: 'malfind.protection_page_execute_readwrite', phi: '+0.310', fill: '62%', color: 'bg-error', textCol: 'text-error', meta: 'PAGE_RWX=8' },
+        { name: 'handles.mutant_anomalous_hash', phi: '+0.220', fill: '44%', color: 'bg-error', textCol: 'text-error', meta: 'Mutant=0x7F' },
+        { name: 'pslist.hidden_process_unlinked_dkom', phi: '+0.190', fill: '38%', color: 'bg-error', textCol: 'text-error', meta: 'DKOM PID 4092' },
+        { name: 'ldrmodules.unmapped_in_load_order', phi: '+0.140', fill: '28%', color: 'bg-error', textCol: 'text-error', meta: 'DLL unhook' },
+        { name: 'callbacks.kernel_driver_notifier_hook', phi: '+0.090', fill: '18%', color: 'bg-error', textCol: 'text-error', meta: 'Hook=1' }
+      ];
+
+      function renderBars(items) {
+        barsList.innerHTML = '';
+        items.forEach(function(item) {
+          const div = document.createElement('div');
+          div.className = 'flex flex-col gap-1 p-space-sm rounded bg-surface-container hover:bg-surface-container-high transition-colors';
+          div.innerHTML = `
+            <div class="flex items-center justify-between font-label-sm text-label-sm">
+              <span class="text-on-surface font-body-sm">${item.name}</span>
+              <span class="${item.textCol} font-label-md">${item.phi} &phi;</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-3 rounded bg-surface-container-highest overflow-hidden flex">
+                <div class="h-full ${item.color}" style="width: ${item.fill};"></div>
+              </div>
+              <span class="font-label-sm text-label-sm text-on-surface-variant w-20 text-right">${item.meta}</span>
+            </div>
+          `;
+          barsList.appendChild(div);
+        });
+      }
+
+      function loadData(sample) {
+        inputField.value = sample.url;
+        predictedClassName.textContent = sample.cls;
+        predictedConfidence.textContent = sample.conf;
+        threatBadge.className = `px-space-sm py-0.5 rounded font-label-sm text-label-sm flex items-center gap-1.5 ${sample.badgeColor}`;
+        threatBadge.innerHTML = `<span class="h-2 w-2 rounded-full ${sample.cls.includes('BENIGN') ? 'bg-tertiary' : 'bg-error animate-pulse'}"></span>${sample.badgeText}`;
+        
+        valPhish.textContent = sample.probs.p + '%';
+        barPhish.style.width = sample.probs.p + '%';
+
+        valMal.textContent = sample.probs.m + '%';
+        barMal.style.width = sample.probs.m + '%';
+
+        valBenign.textContent = sample.probs.b + '%';
+        barBenign.style.width = sample.probs.b + '%';
+
+        valDeface.textContent = sample.probs.d + '%';
+        barDeface.style.width = sample.probs.d + '%';
+
+        summaryText.textContent = sample.summary;
+        renderBars(sample.bars);
+
+        cliAlert.textContent = `Current top attributions recalculated for: ${sample.url} -> ${sample.cls}`;
+      }
+
+      document.getElementById('btn-sample-phish').addEventListener('click', function() { loadData(samples.phishing); });
+      document.getElementById('btn-sample-malware').addEventListener('click', function() { loadData(samples.malware); });
+      document.getElementById('btn-sample-deface').addEventListener('click', function() { loadData(samples.defacement); });
+      document.getElementById('btn-sample-benign').addEventListener('click', function() { loadData(samples.benign); });
+
+      btnScan.addEventListener('click', function() {
+        btnScan.classList.add('opacity-75', 'scale-95');
+        setTimeout(function() {
+          btnScan.classList.remove('opacity-75', 'scale-95');
+          const val = inputField.value.toLowerCase();
+          if (val.includes('patch') || val.includes('bin') || val.includes('exe')) {
+            loadData(samples.malware);
+          } else if (val.includes('hacked') || val.includes('ghost')) {
+            loadData(samples.defacement);
+          } else if (val.includes('mozilla') || val.includes('google') || val.includes('github')) {
+            loadData(samples.benign);
+          } else {
+            loadData(samples.phishing);
+          }
+        }, 300);
+      });
+
+      toggleViewBtn.addEventListener('click', function() {
+        if (currentMode === 'URL') {
+          currentMode = 'MEMORY';
+          switchLabel.textContent = 'Switch to Module B Static URL Pipeline';
+          renderBars(memoryForensicsBars);
+          summaryText.textContent = 'Module A Forensics (CIC-MalMem-2022): Kernel memory inspection identified process manipulation in volatile RAM. Injection markers include unmapped svchost handles, RWX page permissions, and DKOM rootkit unlink behavior.';
+        } else {
+          currentMode = 'URL';
+          switchLabel.textContent = 'Switch to Module A Dynamic Memory View';
+          loadData(samples.phishing);
+        }
+      });
+
+      document.getElementById('btn-escalate-sandbox').addEventListener('click', function() {
+        alert('Dispatched payload to Isolated Module C Headless DOM Chromium Container. Dynamic sandbox capture initialized.');
+      });
+
+      document.getElementById('btn-download-shap').addEventListener('click', function() {
+        alert('Cryptographically signed SHAP Watermark Report (JSON + PDF) generated and downloaded for current threat triage.');
+      });
+
+      document.getElementById('btn-isolate-endpoint').addEventListener('click', function() {
+        alert('Kernel Firewall Rule Injected: Inbound/Outbound sockets isolated via Zero-Trust EDR Sentinel.');
+      });
+    })();
+  </script>
+</div></main><footer class="w-full bg-surface-container-lowest py-space-lg"><div class="w-full px-margin-desktop flex flex-col md:flex-row items-center justify-between gap-space-md font-body-sm text-body-sm text-on-surface-variant"><div class="flex items-center gap-space-sm"><span class="h-2 w-2 rounded-full bg-tertiary"></span><span>CyberXAI Autonomous Telemetry Feed v4.9.1 // Realtime Gradient-Boosting Sentinel</span></div><div class="flex items-center gap-space-lg font-label-sm text-label-sm"><span>MITRE ATT&amp;CK Matrix Bound</span><span>Zero-Trust Kernel Verified</span><span>© 2025 CyberXAI Intel. All Tactical Rights Reserved.</span></div></div></footer></body></html>

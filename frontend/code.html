@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CyberXAI - Explainable Multi-Class URL &amp; Malware Detection</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/threejs/r125/three.min.js"></script>
+<script id="tailwind-config">
+tailwind.config = { darkMode: "class", theme: { extend: {
+  colors: {
+    "background": "#0f131c", "on-background": "#dfe2ee",
+    "surface": "#0f131c", "surface-dim": "#0f131c", "surface-bright": "#353942",
+    "surface-container-lowest": "#0a0e16", "surface-container-low": "#181c24",
+    "surface-container": "#1c2028", "surface-container-high": "#262a33", "surface-container-highest": "#31353e",
+    "on-surface": "#dfe2ee", "on-surface-variant": "#bcc9cd",
+    "outline": "#869397", "outline-variant": "#3d494c",
+    "primary": "#4cd7f6", "on-primary": "#003640", "primary-container": "#06b6d4", "on-primary-container": "#00424f",
+    "secondary": "#dcfdff", "on-secondary": "#00373a", "secondary-container": "#00f1fd", "on-secondary-container": "#006a6f", "secondary-fixed-dim": "#00dce6",
+    "tertiary": "#4edea3", "on-tertiary": "#003824", "tertiary-container": "#1bbd85", "on-tertiary-container": "#00452e",
+    "error": "#ffb4ab", "on-error": "#690005", "error-container": "#93000a", "on-error-container": "#ffdad6"
+  },
+  borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
+  spacing: { "margin-desktop": "2rem", "margin-tablet": "1.5rem", "gutter": "1rem", "gutter-desktop": "1.5rem",
+             "space-xs": "0.25rem", "space-sm": "0.5rem", "space-md": "1rem", "space-lg": "1.5rem", "space-xl": "2rem", "margin": "1rem" },
+  fontFamily: { "headline": ["Space Grotesk"], "label": ["Space Grotesk"], "body": ["Inter"] }
+} } };
+</script>
+</head>
+<body class="bg-background font-body text-on-surface antialiased selection:bg-primary selection:text-on-primary">
+
+<header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-surface-container-highest">
+  <div class="h-16 w-full px-margin-desktop flex items-center justify-between gap-space-lg">
+    <div class="flex items-center gap-space-md">
+      <span class="material-symbols-outlined text-primary text-[26px]">shield</span>
+      <div class="flex flex-col leading-none">
+        <span class="font-headline font-semibold text-on-surface uppercase tracking-tight">CyberXAI</span>
+        <span class="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">Explainable URL &amp; Malware Detection</span>
+      </div>
+    </div>
+    <nav class="hidden md:flex items-center gap-1 p-1 bg-surface-container-low rounded-lg">
+      <button class="nav-tab-btn px-space-md py-1.5 rounded text-[12px] font-label uppercase tracking-wide bg-primary-container text-on-primary-container" data-tab="analyzer">Threat Analyzer</button>
+      <button class="nav-tab-btn px-space-md py-1.5 rounded text-[12px] font-label uppercase tracking-wide text-on-surface-variant hover:text-on-surface" data-tab="visualizer3d">3D Visualizer</button>
+    </nav>
+    <div class="flex items-center gap-2 text-[11px] font-label uppercase tracking-wider text-on-surface-variant" id="api-status-pill">
+      <span class="h-2 w-2 rounded-full bg-outline" id="api-status-dot"></span>
+      <span id="api-status-text">Checking API...</span>
+    </div>
+  </div>
+  <!-- Mobile tab switcher -->
+  <div class="md:hidden flex items-center gap-1 p-1 bg-surface-container-low border-t border-surface-container-highest">
+    <button class="nav-tab-btn flex-1 px-space-md py-1.5 rounded text-[12px] font-label uppercase tracking-wide bg-primary-container text-on-primary-container" data-tab="analyzer">Threat Analyzer</button>
+    <button class="nav-tab-btn flex-1 px-space-md py-1.5 rounded text-[12px] font-label uppercase tracking-wide text-on-surface-variant" data-tab="visualizer3d">3D Visualizer</button>
+  </div>
+</header>
+
+<main class="w-full pt-16 md:pt-16 pb-space-xl">
+
+<div id="view-analyzer" class="max-w-[1400px] mx-auto px-margin-desktop py-space-lg flex flex-col gap-space-lg">
+
+  <!-- Real model performance strip: fed by GET /api/metrics, never hardcoded -->
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-md">
+    <div class="flex items-center justify-between mb-space-sm">
+      <span class="text-[11px] font-label uppercase tracking-widest text-on-surface-variant">Model Performance (live from reports/*.json)</span>
+      <span class="text-[11px] font-label text-on-surface-variant" id="metrics-updated">--</span>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-space-sm" id="kpi-strip">
+      <div class="p-space-md rounded-lg bg-surface-container">
+        <div class="text-[10px] uppercase tracking-wider text-on-surface-variant font-label">Module B - URL Accuracy</div>
+        <div class="text-2xl font-headline font-semibold text-primary" id="kpi-url-acc">--</div>
+        <div class="text-[11px] text-on-surface-variant" id="kpi-url-sub">--</div>
+      </div>
+      <div class="p-space-md rounded-lg bg-surface-container">
+        <div class="text-[10px] uppercase tracking-wider text-on-surface-variant font-label">Module A - Binary Detection</div>
+        <div class="text-2xl font-headline font-semibold text-tertiary" id="kpi-mal-bin">--</div>
+        <div class="text-[11px] text-on-surface-variant" id="kpi-mal-bin-sub">--</div>
+      </div>
+      <div class="p-space-md rounded-lg bg-surface-container">
+        <div class="text-[10px] uppercase tracking-wider text-on-surface-variant font-label">Module A - Family Classification</div>
+        <div class="text-2xl font-headline font-semibold text-secondary-fixed-dim" id="kpi-mal-fam">--</div>
+        <div class="text-[11px] text-on-surface-variant" id="kpi-mal-fam-sub">--</div>
+      </div>
+      <div class="p-space-md rounded-lg bg-surface-container">
+        <div class="text-[10px] uppercase tracking-wider text-on-surface-variant font-label">Module A' - Static (EMBER, external)</div>
+        <div class="text-2xl font-headline font-semibold text-on-surface" id="kpi-mal-static">--</div>
+        <div class="text-[11px] text-on-surface-variant" id="kpi-mal-static-sub">--</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHOIS ablation study (matches [P1] Section 4.6's own methodology, at [P1]'s own 5,000-URL scale) -->
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-md flex flex-col sm:flex-row sm:items-center gap-space-md" id="whois-ablation-card">
+    <div class="flex items-center gap-space-sm shrink-0">
+      <span class="material-symbols-outlined text-primary">dns</span>
+      <div class="flex flex-col leading-tight">
+        <span class="font-headline text-[13px]">WHOIS Ablation</span>
+        <span class="text-[10px] text-on-surface-variant">live-lookup study, 5,000-URL sample</span>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-x-space-lg gap-y-1 text-[12px]" id="whois-ablation-body">
+      <span class="text-on-surface-variant">Run <code class="text-primary">run_whois_ablation.py</code> to populate this.</span>
+    </div>
+  </section>
+
+  <!-- URL scanner -->
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-lg flex flex-col gap-space-md">
+    <div class="flex items-center gap-space-sm">
+      <span class="material-symbols-outlined text-primary">travel_explore</span>
+      <span class="font-headline text-lg">URL Scanner</span>
+      <span class="text-[11px] text-on-surface-variant">-- Module B (static features + Voting Classifier) with SHAP explanation</span>
+    </div>
+    <div class="flex flex-wrap items-center gap-space-xs">
+      <span class="text-[11px] text-on-surface-variant font-label">Demo samples (illustrative only, not live predictions):</span>
+      <button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-[11px] font-label flex items-center gap-1" id="btn-sample-phish"><span class="h-1.5 w-1.5 rounded-full bg-error"></span>Phishing</button>
+      <button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-[11px] font-label flex items-center gap-1" id="btn-sample-malware"><span class="h-1.5 w-1.5 rounded-full bg-error"></span>Malware</button>
+      <button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-[11px] font-label flex items-center gap-1" id="btn-sample-deface"><span class="h-1.5 w-1.5 rounded-full bg-secondary-fixed-dim"></span>Defacement</button>
+      <button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-highest text-[11px] font-label flex items-center gap-1" id="btn-sample-benign"><span class="h-1.5 w-1.5 rounded-full bg-tertiary"></span>Benign</button>
+    </div>
+    <div class="flex flex-col sm:flex-row items-center gap-space-sm">
+      <div class="relative flex-1 w-full">
+        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant text-[20px]">link</span>
+        <input class="w-full pl-11 pr-4 py-3 rounded-lg bg-surface-container text-on-surface outline-none focus:bg-surface-container-high shadow-inner" id="target-input-field" placeholder="Enter a URL to scan..." type="text" value="http://paypal-secure-login.tk/verify/account"/>
+      </div>
+      <button class="w-full sm:w-auto px-space-xl py-3 rounded-lg bg-primary-container hover:bg-secondary-container text-on-primary-container font-label uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(6,182,212,0.35)]" id="btn-execute-scan">
+        <span class="material-symbols-outlined text-[20px]">psychology</span><span>Execute Deep Scan</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Results: prediction + SHAP -->
+  <section class="grid grid-cols-1 xl:grid-cols-12 gap-space-lg">
+    <div class="xl:col-span-5 flex flex-col gap-space-md">
+      <div class="p-space-lg rounded-xl bg-surface-container-low border border-surface-container-highest flex flex-col gap-space-md">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-label uppercase tracking-wider text-on-surface-variant">Multi-Class Decision</span>
+          <span class="px-space-sm py-0.5 rounded text-[11px] font-label flex items-center gap-1.5" id="threat-badge-pulse">
+            <span class="h-2 w-2 rounded-full bg-outline"></span>Awaiting scan
+          </span>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-space-xs p-space-md rounded-lg bg-surface-container">
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase text-on-surface-variant font-label">Predicted Class</span>
+            <span class="text-2xl font-headline font-semibold text-on-surface" id="predicted-class-name">--</span>
+          </div>
+          <div class="flex flex-col sm:text-right">
+            <span class="text-[10px] uppercase text-on-surface-variant font-label">Confidence</span>
+            <span class="text-2xl font-headline font-semibold text-primary" id="predicted-confidence-val">--</span>
+          </div>
+        </div>
+        <div class="flex flex-col gap-space-sm">
+          <span class="text-[10px] uppercase text-on-surface-variant font-label">Class Probabilities</span>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex justify-between text-[11px]"><span class="text-error">Phishing</span><span id="prob-val-phishing">--</span></div>
+            <div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden"><div class="h-full bg-error transition-all duration-500" id="prob-bar-phishing" style="width:0%"></div></div>
+            <div class="flex justify-between text-[11px]"><span class="text-secondary-fixed-dim">Malware</span><span id="prob-val-malware">--</span></div>
+            <div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden"><div class="h-full bg-secondary-fixed-dim transition-all duration-500" id="prob-bar-malware" style="width:0%"></div></div>
+            <div class="flex justify-between text-[11px]"><span class="text-on-surface-variant">Defacement</span><span id="prob-val-deface">--</span></div>
+            <div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden"><div class="h-full bg-primary transition-all duration-500" id="prob-bar-deface" style="width:0%"></div></div>
+            <div class="flex justify-between text-[11px]"><span class="text-tertiary">Benign</span><span id="prob-val-benign">--</span></div>
+            <div class="w-full h-2 rounded bg-surface-container-highest overflow-hidden"><div class="h-full bg-tertiary transition-all duration-500" id="prob-bar-benign" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="text-[11px] text-on-surface-variant leading-relaxed border-t border-surface-container-highest pt-space-sm">
+          Ensemble: Random Forest + XGBoost + Logistic Regression + Naive Bayes (soft voting), trained with SMOTE class balancing.
+        </div>
+      </div>
+    </div>
+
+    <div class="xl:col-span-7 flex flex-col gap-space-md">
+      <div class="p-space-lg rounded-xl bg-surface-container-low border border-surface-container-highest flex flex-col gap-space-md flex-1">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+          <div class="flex items-center gap-space-sm">
+            <span class="material-symbols-outlined text-primary">query_stats</span>
+            <div class="flex flex-col leading-tight">
+              <span class="font-headline text-lg">SHAP Explainability</span>
+              <span class="text-[11px] text-on-surface-variant">Top contributing features, Module D</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 p-1 rounded-lg bg-surface-container" id="explain-mode-switch">
+            <button class="px-space-sm py-1.5 rounded text-[11px] font-label uppercase tracking-wide bg-primary-container text-on-primary-container" data-mode="URL">URL (B)</button>
+            <button class="px-space-sm py-1.5 rounded text-[11px] font-label uppercase tracking-wide text-on-surface-variant hover:text-on-surface" data-mode="MEMORY">Malware Dynamic (A)</button>
+            <button class="px-space-sm py-1.5 rounded text-[11px] font-label uppercase tracking-wide text-on-surface-variant hover:text-on-surface" data-mode="STATIC">Malware Static (A')</button>
+          </div>
+        </div>
+        <div class="p-space-md rounded-lg bg-surface-container flex items-center justify-between text-[11px]">
+          <span class="text-on-surface-variant">Model output f(x): <strong class="text-on-surface" id="shap-output-fx">--</strong></span>
+          <span class="text-on-surface-variant" id="shap-net-push">--</span>
+        </div>
+        <div class="flex flex-col gap-space-sm" id="attribution-bars-list">
+          <div class="text-[12px] text-on-surface-variant p-space-md text-center">Run a scan to see feature attributions.</div>
+        </div>
+        <div class="p-space-md rounded-lg bg-surface-container-highest/50 flex items-start gap-space-sm">
+          <span class="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">smart_toy</span>
+          <p class="text-[12px] text-on-surface-variant leading-relaxed" id="attribution-summary-text">No scan run yet.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Real scan history: only genuine API responses are logged here -->
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-lg flex flex-col gap-space-sm">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-space-sm">
+        <span class="material-symbols-outlined text-primary">history</span>
+        <span class="font-headline text-lg">Recent Scans</span>
+        <span class="text-[11px] text-on-surface-variant">-- real predictions only, this browser session</span>
+      </div>
+      <button class="text-[11px] text-on-surface-variant hover:text-on-surface" id="btn-clear-history">Clear</button>
+    </div>
+    <div class="w-full overflow-x-auto rounded-lg border border-surface-container-highest/60">
+      <table class="w-full text-left border-collapse text-[12px]">
+        <thead>
+          <tr class="border-b border-surface-container-highest bg-surface-container-high/40 text-[10px] uppercase tracking-wider text-on-surface-variant">
+            <th class="py-2 px-3">Time</th>
+            <th class="py-2 px-3">Module</th>
+            <th class="py-2 px-3 min-w-[220px]">Target</th>
+            <th class="py-2 px-3">Class</th>
+            <th class="py-2 px-3">Confidence</th>
+          </tr>
+        </thead>
+        <tbody id="history-table-body">
+          <tr><td colspan="5" class="py-4 px-3 text-center text-on-surface-variant text-[11px]">No scans yet this session.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Incident response bar -->
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-lg flex flex-col gap-space-sm">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-md">
+      <div class="flex items-center gap-space-sm">
+        <span class="material-symbols-outlined text-primary">dynamic_form</span>
+        <span class="font-headline text-lg">Incident Actions</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-space-sm">
+        <button class="px-space-md py-2.5 rounded-lg bg-primary-container hover:bg-secondary-container text-on-primary-container text-[12px] font-label uppercase tracking-wider flex items-center gap-2" id="btn-escalate-sandbox">
+          <span class="material-symbols-outlined text-[18px]">view_in_ar</span><span>Escalate to Sandbox (Module C)</span>
+        </button>
+        <button class="px-space-md py-2.5 rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface text-[12px] font-label flex items-center gap-2" id="btn-download-shap">
+          <span class="material-symbols-outlined text-[18px]">download</span><span>Download SHAP JSON</span>
+        </button>
+        <button class="px-space-md py-2.5 rounded-lg bg-error-container hover:bg-error text-on-error-container hover:text-on-error text-[12px] font-label uppercase tracking-wider flex items-center gap-2" id="btn-isolate-endpoint">
+          <span class="material-symbols-outlined text-[18px]">block</span><span>Isolate Host</span>
+        </button>
+      </div>
+    </div>
+    <div class="w-full rounded-lg bg-surface-container-lowest p-space-md text-[12px] font-mono flex flex-col gap-1 overflow-x-auto" id="cli-telemetry-container">
+      <div class="flex items-center gap-2 text-outline">
+        <span class="text-tertiary">[+]</span><span>Ready. Run a scan or click Escalate to see real Module C output here.</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div id="view-3d" class="max-w-[1400px] mx-auto px-margin-desktop py-space-lg flex flex-col gap-space-lg hidden">
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-md">
+    <div class="flex items-center gap-space-sm">
+      <span class="material-symbols-outlined text-primary">deployed_code</span>
+      <span class="font-headline text-lg">3D Feature-Space Visualizer</span>
+    </div>
+    <p class="text-[12px] text-on-surface-variant mt-1">
+      Illustrative / decorative visualization of the four URL classes as clustered points in a 3D feature
+      space (conceptual axes: TF-IDF n-gram weight, Shannon entropy, lexical path structure). This is
+      <strong>not</strong> driven by live scan data or real model outputs -- it is a stylized rendering of the
+      classification concept, kept separate from the real, API-backed panels on the Threat Analyzer tab so it
+      is never mistaken for live telemetry. Drag to rotate.
+    </p>
+  </section>
+  <section class="rounded-xl bg-black border border-surface-container-highest overflow-hidden" style="height:65vh;">
+    <div id="threejs-container-visualizer" style="width:100%;height:100%"></div>
+  </section>
+  <div class="flex flex-wrap gap-space-md text-[11px] text-on-surface-variant">
+    <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:#ef4444"></span>Phishing</span>
+    <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:#ec4899"></span>Malware</span>
+    <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:#3b82f6"></span>Defacement</span>
+    <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:#10b981"></span>Benign</span>
+  </div>
+</div>
+
+</main>
+
+<footer class="w-full bg-surface-container-lowest py-space-md border-t border-surface-container-highest">
+  <div class="max-w-[1400px] mx-auto px-margin-desktop flex flex-col md:flex-row items-center justify-between gap-space-sm text-[11px] text-on-surface-variant">
+    <span>CyberXAI - Explainable Multi-Class Malicious URL &amp; Malware Detection</span>
+    <span>Backend: src/api/main.py -- Frontend calls only real, trained models</span>
+  </div>
+</footer>
+
+<script>
+(function() {
+  const API_BASE = '';
+  const $ = (id) => document.getElementById(id);
+
+  const inputField = $('target-input-field');
+  const btnScan = $('btn-execute-scan');
+  const predictedClassName = $('predicted-class-name');
+  const predictedConfidence = $('predicted-confidence-val');
+  const threatBadge = $('threat-badge-pulse');
+  const barPhish = $('prob-bar-phishing'), barMal = $('prob-bar-malware'), barBenign = $('prob-bar-benign'), barDeface = $('prob-bar-deface');
+  const valPhish = $('prob-val-phishing'), valMal = $('prob-val-malware'), valBenign = $('prob-val-benign'), valDeface = $('prob-val-deface');
+  const summaryText = $('attribution-summary-text');
+  const barsList = $('attribution-bars-list');
+  const explainModeSwitch = $('explain-mode-switch');
+  const shapFx = $('shap-output-fx');
+  const shapPush = $('shap-net-push');
+  const cliTelemetry = $('cli-telemetry-container');
+  const historyBody = $('history-table-body');
+
+  let currentMode = 'URL';
+  let lastPrediction = null;
+  let historyRows = [];
+
+  // ---- Quick demo samples: intentionally hardcoded, NOT wired to the API,
+  // and clearly labeled as such in the UI. Distinct from every other action
+  // on this page, which calls the real backend. ----
+  const samples = {
+    phishing: { url: 'http://paypal-secure-login.tk/verify/account' },
+    malware: { url: 'http://cdn-patch-update.cc/payload.bin.exe' },
+    defacement: { url: 'http://gov-portal-notice.org/hacked_by_ghosts.html' },
+    benign: { url: 'https://developer.mozilla.org/en-US/docs/Web' },
+  };
+  $('btn-sample-phish').addEventListener('click', () => { inputField.value = samples.phishing.url; });
+  $('btn-sample-malware').addEventListener('click', () => { inputField.value = samples.malware.url; });
+  $('btn-sample-deface').addEventListener('click', () => { inputField.value = samples.defacement.url; });
+  $('btn-sample-benign').addEventListener('click', () => { inputField.value = samples.benign.url; });
+
+  function fmtPct(x) { return (Math.round((x || 0) * 1000) / 10) + '%'; }
+  function fmtTime() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
+  }
+
+  function logCli(line, tag, tagColor) {
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-2 text-outline';
+    row.innerHTML = `<span class="${tagColor || 'text-tertiary'}">[${tag || '+'}]</span><span>${line}</span>`;
+    cliTelemetry.appendChild(row);
+    while (cliTelemetry.children.length > 12) cliTelemetry.removeChild(cliTelemetry.firstChild);
+    cliTelemetry.scrollTop = cliTelemetry.scrollHeight;
+  }
+
+  function addHistoryRow(moduleTag, target, cls, confidence) {
+    historyRows.unshift({ time: fmtTime(), module: moduleTag, target, cls, confidence });
+    if (historyRows.length > 50) historyRows.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    if (!historyRows.length) {
+      historyBody.innerHTML = '<tr><td colspan="5" class="py-4 px-3 text-center text-on-surface-variant text-[11px]">No scans yet this session.</td></tr>';
+      return;
+    }
+    historyBody.innerHTML = historyRows.map(r => `
+      <tr class="border-b border-surface-container-highest/30">
+        <td class="py-2 px-3 font-mono text-[11px] text-on-surface-variant">${r.time}</td>
+        <td class="py-2 px-3 text-[11px]">${r.module}</td>
+        <td class="py-2 px-3 font-mono text-[11px] max-w-xs truncate" title="${r.target}">${r.target}</td>
+        <td class="py-2 px-3 text-[11px] uppercase">${r.cls}</td>
+        <td class="py-2 px-3 text-[11px]">${fmtPct(r.confidence)}</td>
+      </tr>
+    `).join('');
+  }
+  $('btn-clear-history').addEventListener('click', () => { historyRows = []; renderHistory(); });
+
+  const CLASS_DISPLAY = {
+    phishing: { badge: 'text-error bg-error-container/30', dot: 'bg-error animate-pulse', label: 'PHISHING' },
+    malware: { badge: 'text-error bg-error-container/30', dot: 'bg-error animate-pulse', label: 'MALWARE' },
+    defacement: { badge: 'text-secondary-fixed-dim bg-secondary-container/20', dot: 'bg-secondary-fixed-dim', label: 'DEFACEMENT' },
+    benign: { badge: 'text-tertiary bg-tertiary-container/20', dot: 'bg-tertiary', label: 'BENIGN' },
+  };
+
+  function renderBars(items) {
+    if (!items.length) {
+      barsList.innerHTML = '<div class="text-[12px] text-on-surface-variant p-space-md text-center">No attribution data.</div>';
+      return;
+    }
+    barsList.innerHTML = items.map(item => `
+      <div class="flex flex-col gap-1 p-space-sm rounded bg-surface-container">
+        <div class="flex items-center justify-between text-[12px]">
+          <span class="font-mono">${item.name}</span>
+          <span class="${item.textCol} font-label">${item.phi}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex-1 h-2.5 rounded bg-surface-container-highest overflow-hidden"><div class="h-full ${item.color}" style="width:${item.fill}"></div></div>
+          <span class="text-[11px] text-on-surface-variant w-24 text-right">${item.meta}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function toBars(topFeatures) {
+    return (topFeatures || []).map(f => {
+      const pos = f.shap_value > 0;
+      return {
+        name: f.feature,
+        phi: (pos ? '+' : '') + f.shap_value.toFixed(3),
+        fill: Math.min(100, Math.abs(f.shap_value) * 400).toFixed(0) + '%',
+        color: pos ? 'bg-error' : 'bg-tertiary',
+        textCol: pos ? 'text-error' : 'text-tertiary',
+        meta: 'val=' + f.raw_value,
+      };
+    });
+  }
+
+  function renderRealPrediction(result) {
+    lastPrediction = result;
+    const disp = CLASS_DISPLAY[result.predicted_class] || CLASS_DISPLAY.benign;
+    const probs = result.probabilities || {};
+
+    inputField.value = result.url;
+    predictedClassName.textContent = disp.label;
+    predictedConfidence.textContent = fmtPct(result.confidence);
+    threatBadge.className = `px-space-sm py-0.5 rounded text-[11px] font-label flex items-center gap-1.5 ${disp.badge}`;
+    threatBadge.innerHTML = `<span class="h-2 w-2 rounded-full ${disp.dot}"></span>${disp.label}`;
+
+    valPhish.textContent = fmtPct(probs.phishing); barPhish.style.width = fmtPct(probs.phishing);
+    valMal.textContent = fmtPct(probs.malware); barMal.style.width = fmtPct(probs.malware);
+    valBenign.textContent = fmtPct(probs.benign); barBenign.style.width = fmtPct(probs.benign);
+    valDeface.textContent = fmtPct(probs.defacement); barDeface.style.width = fmtPct(probs.defacement);
+
+    shapFx.textContent = result.confidence.toFixed(3);
+    shapPush.textContent = `Net SHAP push: ${result.net_push >= 0 ? '+' : ''}${result.net_push.toFixed(3)} (${result.explanation_model || 'surrogate model'})`;
+    renderBars(toBars(result.top_features));
+
+    const topNames = (result.top_features || []).slice(0, 3).map(f => f.feature).join(', ');
+    summaryText.textContent = `Predicted '${result.predicted_class}' at ${fmtPct(result.confidence)} confidence. Top SHAP-attributed features: ${topNames || 'none'}.`;
+
+    logCli(`Module B: ${result.url} -> ${result.predicted_class} (${fmtPct(result.confidence)})`, '+', 'text-primary');
+    addHistoryRow('URL (Module B)', result.url, result.predicted_class, result.confidence);
+  }
+
+  async function runRealScan(url) {
+    const res = await fetch(`${API_BASE}/api/url/predict`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url })
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  btnScan.addEventListener('click', async function() {
+    const targetUrl = inputField.value.trim();
+    if (!targetUrl) return;
+    btnScan.disabled = true;
+    btnScan.classList.add('opacity-70');
+    try {
+      const result = await runRealScan(targetUrl);
+      if (currentMode !== 'URL') {
+        currentMode = 'URL';
+        setActiveExplainMode('URL');
+      }
+      renderRealPrediction(result);
+    } catch (err) {
+      logCli(`Prediction API error: ${err.message}. Is 'uvicorn src.api.main:app --port 8000' running?`, '!', 'text-error');
+    } finally {
+      btnScan.disabled = false;
+      btnScan.classList.remove('opacity-70');
+    }
+  });
+
+  async function loadRealMemorySample() {
+    summaryText.textContent = 'Loading a real CIC-MalMem-2022 sample and computing its SHAP explanation (can take a few seconds)...';
+    const res = await fetch(`${API_BASE}/api/malware/sample?task=family`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const result = await res.json();
+    renderBars(toBars(result.top_features));
+    shapFx.textContent = result.confidence.toFixed(3);
+    shapPush.textContent = `Predicted: ${result.predicted_class} (true label: ${result.true_label}) -- row ${result.row_index}/${result.dataset_size}`;
+    summaryText.textContent = `Module A (CIC-MalMem-2022, dynamic memory forensics), real held-out sample #${result.row_index}: predicted '${result.predicted_class}' (true label '${result.true_label}') at ${fmtPct(result.confidence)} confidence.`;
+    logCli(`Module A: sample #${result.row_index} -> ${result.predicted_class} (${fmtPct(result.confidence)})`, '+', 'text-primary');
+    addHistoryRow('Malware Dynamic (Module A)', `memory sample #${result.row_index}`, result.predicted_class, result.confidence);
+  }
+
+  async function loadRealStaticSample() {
+    summaryText.textContent = 'Loading a real EMBER-2018 external test-set sample and computing its SHAP explanation (first request also loads the model -- can take longer)...';
+    const res = await fetch(`${API_BASE}/api/malware/static_sample`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `HTTP ${res.status}`);
+    }
+    const result = await res.json();
+    renderBars(toBars(result.top_features));
+    shapFx.textContent = result.confidence.toFixed(3);
+    shapPush.textContent = `Predicted: ${result.predicted_class} (true label: ${result.true_label}) -- row ${result.row_index}/${result.dataset_size} -- ${result.explanation_model}`;
+    summaryText.textContent = `Module A' (${result.source}), real sample #${result.row_index}: predicted '${result.predicted_class}' (true label '${result.true_label}') at ${fmtPct(result.confidence)} confidence.`;
+    logCli(`Module A': sample #${result.row_index} -> ${result.predicted_class} (${fmtPct(result.confidence)})`, '+', 'text-primary');
+    addHistoryRow("Malware Static (Module A')", `EMBER-test sample #${result.row_index}`, result.predicted_class, result.confidence);
+  }
+
+  function setActiveExplainMode(mode) {
+    explainModeSwitch.querySelectorAll('button[data-mode]').forEach(btn => {
+      if (btn.dataset.mode === mode) {
+        btn.className = btn.className.replace('text-on-surface-variant hover:text-on-surface', 'bg-primary-container text-on-primary-container');
+        if (!btn.className.includes('bg-primary-container')) btn.classList.add('bg-primary-container', 'text-on-primary-container');
+      } else {
+        btn.className = btn.className.replace('bg-primary-container text-on-primary-container', 'text-on-surface-variant');
+        if (!btn.className.includes('text-on-surface-variant')) btn.classList.add('text-on-surface-variant', 'hover:text-on-surface');
+      }
+    });
+  }
+
+  explainModeSwitch.querySelectorAll('button[data-mode]').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const mode = btn.dataset.mode;
+      if (mode === currentMode) return;
+      currentMode = mode;
+      setActiveExplainMode(mode);
+      if (mode === 'URL') {
+        if (lastPrediction) renderRealPrediction(lastPrediction);
+        else summaryText.textContent = 'Run a scan to see feature attributions.';
+        return;
+      }
+      try {
+        if (mode === 'MEMORY') await loadRealMemorySample();
+        else await loadRealStaticSample();
+      } catch (err) {
+        summaryText.textContent = `Error reaching malware sample API: ${err.message}`;
+      }
+    });
+  });
+
+  $('btn-escalate-sandbox').addEventListener('click', async function() {
+    const targetUrl = inputField.value.trim();
+    if (!targetUrl) return;
+    logCli(`Dispatching ${targetUrl} to isolated headless Chromium sandbox (Module C)... up to 30s.`, '#', 'text-primary');
+    try {
+      const res = await fetch(`${API_BASE}/api/url/escalate`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url: targetUrl })
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${res.status}`);
+      }
+      const r = await res.json();
+      logCli(`Module C result: final_url=${r.final_url} redirects=${r.redirect_count} domain_changed=${r.domain_changed} login_form=${r.has_login_form} tls=${r.tls_used}`, '+', 'text-tertiary');
+    } catch (err) {
+      logCli(`Module C error: ${err.message}`, '!', 'text-error');
+    }
+  });
+
+  $('btn-download-shap').addEventListener('click', function() {
+    if (!lastPrediction) { alert('Run a scan first -- there is no live prediction to export yet.'); return; }
+    const blob = new Blob([JSON.stringify(lastPrediction, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `shap-explanation-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+
+  $('btn-isolate-endpoint').addEventListener('click', function() {
+    alert('UI demo only: no real endpoint-isolation/EDR system is integrated in this project.');
+  });
+
+  // ---- Real metrics (KPI strip) ----
+  async function loadMetrics() {
+    try {
+      const res = await fetch(`${API_BASE}/api/metrics`);
+      const m = await res.json();
+      if (m.url_module_b) {
+        $('kpi-url-acc').textContent = fmtPct(m.url_module_b.accuracy);
+        $('kpi-url-sub').textContent = `ROC-AUC ${m.url_module_b.macro_roc_auc?.toFixed(3) ?? '--'} | n=${m.url_module_b.n_test ?? '--'}`;
+      }
+      if (m.malware_module_a_dynamic) {
+        $('kpi-mal-bin').textContent = fmtPct(m.malware_module_a_dynamic.binary_accuracy);
+        $('kpi-mal-bin-sub').textContent = `ROC-AUC ${m.malware_module_a_dynamic.binary_roc_auc?.toFixed(3) ?? '--'}`;
+        $('kpi-mal-fam').textContent = fmtPct(m.malware_module_a_dynamic.family_accuracy);
+        $('kpi-mal-fam-sub').textContent = `Macro-F1 ${m.malware_module_a_dynamic.family_macro_f1?.toFixed(3) ?? '--'}`;
+      }
+      if (m.malware_module_a_static) {
+        $('kpi-mal-static').textContent = fmtPct(m.malware_module_a_static.external_accuracy);
+        $('kpi-mal-static-sub').textContent = `EMBER external test | ROC-AUC ${m.malware_module_a_static.external_roc_auc?.toFixed(3) ?? '--'}`;
+      } else {
+        $('kpi-mal-static').textContent = 'n/a';
+        $('kpi-mal-static-sub').textContent = 'not trained yet';
+      }
+      if (m.whois_ablation) {
+        const w = m.whois_ablation;
+        const deltaPct = (w.delta_macro_f1 * 100).toFixed(2);
+        $('whois-ablation-body').innerHTML = `
+          <span>Macro-F1 without: <strong class="text-on-surface">${(w.without_whois_f1 * 100).toFixed(1)}%</strong></span>
+          <span>Macro-F1 with: <strong class="text-tertiary">${(w.with_whois_f1 * 100).toFixed(1)}%</strong></span>
+          <span>Delta: <strong class="${w.delta_macro_f1 >= 0 ? 'text-tertiary' : 'text-error'}">${w.delta_macro_f1 >= 0 ? '+' : ''}${deltaPct}pp</strong></span>
+          <span class="text-on-surface-variant">WHOIS availability: ${(w.whois_availability_rate * 100).toFixed(0)}% -- n=${w.sample_size}, reproducing [P1] Sec. 4.6</span>
+        `;
+      }
+      $('metrics-updated').textContent = 'Last read: ' + fmtTime();
+    } catch (e) {
+      $('metrics-updated').textContent = 'Unavailable';
+    }
+  }
+
+  async function checkHealth() {
+    const dot = $('api-status-dot'), text = $('api-status-text');
+    try {
+      const res = await fetch(`${API_BASE}/api/health`);
+      if (res.ok) {
+        dot.className = 'h-2 w-2 rounded-full bg-tertiary';
+        text.textContent = 'API Connected';
+      } else throw new Error();
+    } catch (e) {
+      dot.className = 'h-2 w-2 rounded-full bg-error';
+      text.textContent = 'API Unreachable';
+    }
+  }
+
+  checkHealth();
+  loadMetrics();
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   Tab navigation + decorative 3D feature-space visualizer.
+   The Three.js scene is lazy-initialized on first switch to the 3D tab
+   (not at page load), because its renderer needs the container's real
+   clientWidth/clientHeight, which is 0 while the tab is hidden.
+   ========================================================================== */
+(function() {
+  const viewAnalyzer = document.getElementById('view-analyzer');
+  const view3d = document.getElementById('view-3d');
+  const tabButtons = document.querySelectorAll('.nav-tab-btn');
+  let scene3dInitialized = false;
+
+  function setActiveTab(tab) {
+    if (tab === 'analyzer') {
+      viewAnalyzer.classList.remove('hidden');
+      view3d.classList.add('hidden');
+    } else {
+      viewAnalyzer.classList.add('hidden');
+      view3d.classList.remove('hidden');
+      if (!scene3dInitialized) {
+        scene3dInitialized = true;
+        initVisualizer3d();
+      }
+    }
+    tabButtons.forEach(btn => {
+      if (btn.dataset.tab === tab) {
+        btn.className = btn.className.replace('text-on-surface-variant hover:text-on-surface', 'bg-primary-container text-on-primary-container');
+        if (!btn.className.includes('bg-primary-container')) btn.classList.add('bg-primary-container', 'text-on-primary-container');
+      } else {
+        btn.className = btn.className.replace('bg-primary-container text-on-primary-container', 'text-on-surface-variant');
+        if (!btn.className.includes('text-on-surface-variant')) btn.classList.add('text-on-surface-variant');
+      }
+    });
+  }
+
+  tabButtons.forEach(btn => btn.addEventListener('click', () => setActiveTab(btn.dataset.tab)));
+
+  function initVisualizer3d() {
+    const container = document.getElementById('threejs-container-visualizer');
+    const width = container.clientWidth || window.innerWidth;
+    const height = container.clientHeight || 480;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+    camera.position.set(22, 16, 26);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0x0a192f, 2.0));
+    const dirLight = new THREE.DirectionalLight(0x00f2fe, 3.0);
+    dirLight.position.set(20, 30, 20);
+    scene.add(dirLight);
+    const pLight = new THREE.PointLight(0xef4444, 2.5, 50);
+    pLight.position.set(-15, 10, -10);
+    scene.add(pLight);
+
+    const mainGroup = new THREE.Group();
+    scene.add(mainGroup);
+
+    const gridHelper = new THREE.GridHelper(28, 28, 0x06b6d4, 0x1e293b);
+    gridHelper.position.y = -4;
+    mainGroup.add(gridHelper);
+
+    const surfaceGeo = new THREE.PlaneGeometry(24, 24, 24, 24);
+    surfaceGeo.rotateX(-Math.PI / 2);
+    const pos = surfaceGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const y = Math.sin(x * 0.3) * Math.cos(z * 0.3) * 2.2 + Math.sin(Math.sqrt(x*x + z*z) * 0.5) * 1.2;
+      pos.setY(i, y - 2.5);
+    }
+    surfaceGeo.computeVertexNormals();
+    const surfaceMat = new THREE.MeshLambertMaterial({ color: 0x083344, wireframe: true, transparent: true, opacity: 0.45 });
+    mainGroup.add(new THREE.Mesh(surfaceGeo, surfaceMat));
+
+    const clusterData = [
+      { count: 45, center: new THREE.Vector3(7, 3, 6), color: 0xef4444, size: 0.45, type: 'box' },      // Phishing
+      { count: 35, center: new THREE.Vector3(-7, 2, -6), color: 0xec4899, size: 0.45, type: 'octa' },   // Malware
+      { count: 25, center: new THREE.Vector3(-6, -1, 7), color: 0x3b82f6, size: 0.4, type: 'tetra' },   // Defacement
+      { count: 55, center: new THREE.Vector3(4, -2, -5), color: 0x10b981, size: 0.35, type: 'sphere' }, // Benign
+    ];
+    const nodes = [];
+    const clusterGroup = new THREE.Group();
+    mainGroup.add(clusterGroup);
+    clusterData.forEach((cluster) => {
+      for (let i = 0; i < cluster.count; i++) {
+        let geo;
+        if (cluster.type === 'box') geo = new THREE.BoxGeometry(cluster.size, cluster.size, cluster.size);
+        else if (cluster.type === 'octa') geo = new THREE.OctahedronGeometry(cluster.size);
+        else if (cluster.type === 'tetra') geo = new THREE.TetrahedronGeometry(cluster.size);
+        else geo = new THREE.SphereGeometry(cluster.size * 0.8, 8, 8);
+        const mat = new THREE.MeshLambertMaterial({ color: cluster.color, transparent: true, opacity: 0.85 });
+        const mesh = new THREE.Mesh(geo, mat);
+        const spread = 3.2;
+        const px = cluster.center.x + (Math.random() - 0.5) * spread;
+        const py = cluster.center.y + (Math.random() - 0.5) * spread * 0.8;
+        const pz = cluster.center.z + (Math.random() - 0.5) * spread;
+        mesh.position.set(px, py, pz);
+        mesh.userData = { basePos: new THREE.Vector3(px, py, pz), speed: 0.5 + Math.random() * 0.8, phase: Math.random() * Math.PI * 2 };
+        clusterGroup.add(mesh);
+        nodes.push(mesh);
+      }
+    });
+
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    container.addEventListener('mousedown', (e) => { isDragging = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - previousMousePosition.x;
+      const deltaY = e.clientY - previousMousePosition.y;
+      mainGroup.rotation.y += deltaX * 0.008;
+      mainGroup.rotation.x += deltaY * 0.008;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    });
+    window.addEventListener('resize', () => {
+      if (view3d.classList.contains('hidden')) return;
+      const w = container.clientWidth || window.innerWidth;
+      const h = container.clientHeight || 480;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      if (view3d.classList.contains('hidden')) return; // pause rendering while tab is hidden
+      const time = clock.getElapsedTime();
+      if (!isDragging) mainGroup.rotation.y += 0.003;
+      nodes.forEach((n) => {
+        n.position.y = n.userData.basePos.y + Math.sin(time * n.userData.speed + n.userData.phase) * 0.3;
+        n.rotation.x += 0.01;
+        n.rotation.y += 0.015;
+      });
+      surfaceMat.opacity = 0.35 + Math.sin(time * 2) * 0.12;
+      renderer.render(scene, camera);
+    }
+    animate();
+  }
+})();
+</script>
+</body>
+</html>
