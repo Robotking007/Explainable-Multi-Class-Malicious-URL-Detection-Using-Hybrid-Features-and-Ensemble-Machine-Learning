@@ -22,13 +22,28 @@ DIFFERENT label, the highest-priority source's label wins:
      but 3.37M are labeled "adult" (out of scope for this project's 4-class
      taxonomy and dropped entirely); the remaining benign/phish/malware rows
      are kept.
-  6. Everything in ADDITIONAL_SOURCES below (see its own comments) -- newer
+  6. Dataset/PhishVN.../data/dataset_url.csv - PhishVN v3.1.0 (Vietnamese
+     URL phishing dataset), extracted from its own zip. Well-documented
+     research dataset (datasheet/schema/citation included) with clean
+     phishing/benign labels, verified by sampling: phishing entries are
+     plausible typosquats, benign entries are real .gov.vn domains.
+  7. Everything in ADDITIONAL_SOURCES below (see its own comments) -- newer
      datasets added to Dataset/ after the first four/five were already
      established as the authoritative core. Binary (benign/malicious-only)
      sources whose "malicious" side doesn't specify WHICH of
      phishing/defacement/malware it is are only used for their benign rows
      (see SKIP_AMBIGUOUS_MALICIOUS below) -- guessing a specific class for
      an ambiguously-labeled row would poison that class rather than grow it.
+
+A second candidate source (Dataset/Phishing Website Detection Dataset/,
+6.5M headerless plaintext URLs) was investigated and deliberately EXCLUDED:
+sampling its "malign" file found 14,641 lines referencing amazon.com/
+google.com/wikipedia.org/microsoft.com, plus many adult-content blogspot
+URLs in both classes -- strong evidence it's an adult-content classifier
+mislabeled as a phishing dataset, not a phishing/malware corpus at all.
+Merging it would have taught the model that mainstream sites and Microsoft's
+own mail-protection domain are malicious -- the same class of labeling bug
+as the scheme-prefix leak this project already found and fixed once.
 
 Label polarity for binary (0/1) sources was verified by inspecting actual
 sample URLs per label value, not assumed -- two sources
@@ -109,6 +124,9 @@ ADDITIONAL_SOURCES = [
 # comment-prefixed export, not a plain CSV with a header row.
 URLHAUS_PATH = DATASET_DIR / "file.csv.txt"
 
+# PhishVN: extracted from its zip (see module docstring, priority tier 6).
+PHISHVN_PATH = DATASET_DIR / "PhishVN A Time-Stamped Vietnamese URL Phishing Dat" / "data" / "dataset_url.csv"
+
 
 def _load_additional(filename, url_col, label_col, mapping):
     path = DATASET_DIR / filename
@@ -151,7 +169,14 @@ def main():
     uh["norm"] = uh["url"].astype(str).apply(normalize_url)
     log(f"URLhaus usable rows: {len(uh)}")
 
-    frames = [v[["norm", "type"]], uh[["norm", "type"]], mud[["norm", "type"]], m[["norm", "type"]], mu[["norm", "type"]]]
+    log("Loading PhishVN (dataset_url.csv, extracted from its zip)...")
+    pv = pd.read_csv(PHISHVN_PATH, usecols=["url", "label"]).dropna(subset=["url", "label"])
+    pv = pv[pv["label"].isin(["phishing", "benign"])].rename(columns={"label": "type"})
+    pv["norm"] = pv["url"].astype(str).apply(normalize_url)
+    log(f"PhishVN usable rows: {len(pv)}")
+
+    frames = [v[["norm", "type"]], uh[["norm", "type"]], mud[["norm", "type"]], m[["norm", "type"]],
+              mu[["norm", "type"]], pv[["norm", "type"]]]
 
     for filename, url_col, label_col, mapping in ADDITIONAL_SOURCES:
         log(f"Loading {filename}...")
