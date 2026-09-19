@@ -88,7 +88,18 @@ def _shannon_entropy(s: str) -> float:
 
 
 def normalize_url(raw_url: str) -> str:
-    return _SCHEME_RE.sub("", str(raw_url).strip())
+    # Strips a literal wrapping single-quote (CSV-quoting artifact from
+    # MUD_malicious_urls_2026_V2.csv/merged_urls_dataset.csv) -- see
+    # features.py's normalize_url docstring for the full story. Scheme
+    # must be stripped BEFORE the quote check: merged_urls_dataset.csv's
+    # variant is "http://'domain'" (quote after the scheme), so checking
+    # for a leading quote first silently misses every row from that source.
+    s = str(raw_url).strip()
+    s = _SCHEME_RE.sub("", s)
+    if len(s) >= 2 and s[0] == "'" and s[-1] == "'":
+        s = s[1:-1]
+        s = _SCHEME_RE.sub("", s)
+    return s
 
 
 def _safe_urlparse(url: str):

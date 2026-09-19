@@ -80,8 +80,29 @@ def normalize_url(raw_url: str) -> str:
     learns "has a scheme prefix" as a proxy for "malicious" and will
     misclassify an ordinary, fully-qualified URL like https://www.google.com.
     Stripping the scheme here, uniformly, at both train and inference time,
-    removes that leak."""
-    return _SCHEME_RE.sub("", str(raw_url).strip())
+    removes that leak.
+
+    Also strips a literal wrapping single-quote (e.g. "'example.com/x'"),
+    a CSV-quoting artifact found in MUD_malicious_urls_2026_V2.csv (and
+    propagated into several sources merged from it) that survives pandas'
+    default parsing since single quotes aren't its quote character. Found
+    via 8,356 affected rows (0.32% of combined_urls.csv) making WHOIS
+    lookups fail on corrupted domains like "'aepc1.com" during the bulk
+    WHOIS enrichment run -- a small fraction of rows, but a real, fixable
+    data bug, not just registrar rate-limiting.
+
+    merged_urls_dataset.csv has its own variant of this: the quote comes
+    AFTER the scheme ("http://'example.com/x'"), so the quote-strip must
+    run after scheme-strip, not before -- checking for it first (as an
+    earlier version of this function did) silently missed every row from
+    that source, since the string doesn't start with "'" until the scheme
+    is already gone."""
+    s = str(raw_url).strip()
+    s = _SCHEME_RE.sub("", s)
+    if len(s) >= 2 and s[0] == "'" and s[-1] == "'":
+        s = s[1:-1]
+        s = _SCHEME_RE.sub("", s)  # handles the hypothetical "'http://domain'" case too
+    return s
 
 
 def _safe_urlparse(url: str):
