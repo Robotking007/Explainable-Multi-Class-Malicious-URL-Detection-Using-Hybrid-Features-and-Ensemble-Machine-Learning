@@ -180,10 +180,31 @@ def main():
     log(f"Class counts before SMOTE:\n{y_train.value_counts()}")
     smote = SMOTE(random_state=args.random_state)
     X_train_bal, y_train_bal = smote.fit_resample(X_train_scaled, y_train)
-    X_train_bal = X_train_bal.astype(np.float32)
-    del X_train_scaled
+    X_train_bal_np = X_train_bal.astype(np.float32).to_numpy()
+    del X_train_bal, X_train_scaled
     gc.collect()
     log(f"Class counts after SMOTE:\n{pd.Series(y_train_bal).value_counts()}")
+
+    # Move the SMOTE-balanced matrix to a disk-backed memmap on D: (same
+    # technique that fixed train_static_baseline.py's pool-building crash).
+    # This run previously got all the way through RF + XGBoost fitting
+    # (5.5+ hours) only to crash inside LogisticRegression.fit(): sklearn's
+    # check_array upcasts to float64 for LR internally (3.13GB for this
+    # matrix), and by that point the already-fitted, unconstrained-depth RF
+    # (300 trees over 4.67M rows) left too little RAM headroom for that
+    # one more allocation -- the same "big object already resident + one
+    # more allocation" pattern as every other memory crash this project
+    # hit. Keeping X_train_bal itself off the RAM budget (paged from disk
+    # instead) frees exactly the headroom LR's internal copy needs, without
+    # touching RF/XGBoost's data, depth, or row count at all.
+    tmp_dir = REPORT_DIR / "_tmp_arrays"
+    tmp_dir.mkdir(exist_ok=True)
+    mm_path = tmp_dir / "X_train_bal_url.f32"
+    X_train_bal = np.memmap(mm_path, dtype=np.float32, mode="w+", shape=X_train_bal_np.shape)
+    X_train_bal[:] = X_train_bal_np
+    X_train_bal.flush()
+    del X_train_bal_np
+    gc.collect()
 
     # ---- Encode labels (needed for XGBoost + multi-class ROC-AUC) ----
     le = LabelEncoder()
