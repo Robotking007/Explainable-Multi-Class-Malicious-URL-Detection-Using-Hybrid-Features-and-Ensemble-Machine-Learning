@@ -285,6 +285,34 @@ tailwind.config = { darkMode: "class", theme: { extend: {
 
 </main>
 
+<!-- Chat panel: explains the last real scan result in plain English via
+     Gemini (server-side, src/api/chatbot.py). Hidden entirely until the
+     CHATBOT_ENABLED flag in the script below is flipped to true -- per
+     explicit project decision, this stays off until the rest of the
+     project is fully tested. No visible toggle exists for a viewer to
+     stumble onto; the element is never rendered when the flag is false. -->
+<div id="chatbot-widget" class="hidden fixed bottom-6 right-6 z-40 flex flex-col items-end gap-space-sm">
+  <div id="chatbot-panel" class="hidden w-[360px] max-w-[92vw] h-[480px] rounded-xl bg-surface-container-low border border-surface-container-highest shadow-2xl flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-space-md py-space-sm border-b border-surface-container-highest bg-surface-container-lowest">
+      <div class="flex items-center gap-space-sm">
+        <span class="material-symbols-outlined text-primary text-[20px]">smart_toy</span>
+        <span class="font-headline text-[13px]">Scan Explainer</span>
+      </div>
+      <button id="btn-chatbot-close" class="text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-[18px]">close</span></button>
+    </div>
+    <div id="chatbot-messages" class="flex-1 overflow-y-auto p-space-md flex flex-col gap-space-sm text-[12px]">
+      <div class="text-on-surface-variant">Ask me about the last scan result -- I'll explain it using the real SHAP attribution data, not a generic answer.</div>
+    </div>
+    <div class="p-space-sm border-t border-surface-container-highest flex items-center gap-2">
+      <input id="chatbot-input" type="text" placeholder="Ask about this scan..." class="flex-1 px-3 py-2 rounded-lg bg-surface-container text-on-surface text-[12px] outline-none focus:bg-surface-container-high"/>
+      <button id="btn-chatbot-send" class="p-2 rounded-lg bg-primary-container hover:bg-secondary-container text-on-primary-container"><span class="material-symbols-outlined text-[18px]">send</span></button>
+    </div>
+  </div>
+  <button id="btn-chatbot-toggle" class="h-12 w-12 rounded-full bg-primary-container hover:bg-secondary-container text-on-primary-container shadow-[0_0_24px_rgba(6,182,212,0.35)] flex items-center justify-center">
+    <span class="material-symbols-outlined">chat</span>
+  </button>
+</div>
+
 <footer class="w-full bg-surface-container-lowest py-space-md border-t border-surface-container-highest">
   <div class="max-w-[1400px] mx-auto px-margin-desktop flex flex-col md:flex-row items-center justify-between gap-space-sm text-[11px] text-on-surface-variant">
     <span>CyberXAI - Explainable Multi-Class Malicious URL &amp; Malware Detection</span>
@@ -614,6 +642,69 @@ tailwind.config = { darkMode: "class", theme: { extend: {
 
   checkHealth();
   loadMetrics();
+
+  // ---- Chatbot (hidden by default) ----
+  // Flip to true only once the rest of the project is fully tested and
+  // you're ready to demo it -- explicit project decision, not a bug.
+  const CHATBOT_ENABLED = false;
+
+  if (CHATBOT_ENABLED) {
+    const widget = $('chatbot-widget');
+    const panel = $('chatbot-panel');
+    const messagesEl = $('chatbot-messages');
+    const inputEl = $('chatbot-input');
+    let chatHistory = [];
+
+    widget.classList.remove('hidden');
+
+    function addChatMessage(role, text) {
+      const row = document.createElement('div');
+      row.className = role === 'user'
+        ? 'self-end max-w-[85%] px-3 py-2 rounded-lg bg-primary-container text-on-primary-container'
+        : 'self-start max-w-[85%] px-3 py-2 rounded-lg bg-surface-container text-on-surface';
+      row.textContent = text;
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    $('btn-chatbot-toggle').addEventListener('click', () => panel.classList.toggle('hidden'));
+    $('btn-chatbot-close').addEventListener('click', () => panel.classList.add('hidden'));
+
+    async function sendChatMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = '';
+      addChatMessage('user', text);
+      chatHistory.push({ role: 'user', text });
+
+      const thinking = document.createElement('div');
+      thinking.className = 'self-start text-on-surface-variant text-[11px]';
+      thinking.textContent = 'Thinking...';
+      messagesEl.appendChild(thinking);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/chat`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ message: text, context: lastPrediction, history: chatHistory }),
+        });
+        thinking.remove();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        addChatMessage('model', data.reply);
+        chatHistory.push({ role: 'model', text: data.reply });
+      } catch (err) {
+        thinking.remove();
+        addChatMessage('model', `Error: ${err.message}`);
+      }
+    }
+
+    $('btn-chatbot-send').addEventListener('click', sendChatMessage);
+    inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+  }
 })();
 </script>
 
