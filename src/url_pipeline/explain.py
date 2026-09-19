@@ -27,6 +27,7 @@ import shap
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from url_pipeline.features import extract_features_row, normalize_url  # noqa: E402
+from model_registry import ensure_model  # noqa: E402
 
 MODEL_DIR = ROOT / "models"
 
@@ -36,11 +37,11 @@ def load_artifacts():
     """Cached so a long-lived process (e.g. the API server) loads these once,
     not once per request -- joblib.load on the voting classifier is not
     instant."""
-    voting = joblib.load(MODEL_DIR / "url_voting_classifier.joblib")
-    scaler = joblib.load(MODEL_DIR / "url_scaler.joblib")
-    le = joblib.load(MODEL_DIR / "url_label_encoder.joblib")
-    vectorizer = joblib.load(MODEL_DIR / "url_ngram_vectorizer.joblib")
-    with open(MODEL_DIR / "url_selected_features.json") as f:
+    voting = joblib.load(ensure_model("url_voting_classifier.joblib"))
+    scaler = joblib.load(ensure_model("url_scaler.joblib"))
+    le = joblib.load(ensure_model("url_label_encoder.joblib"))
+    vectorizer = joblib.load(ensure_model("url_ngram_vectorizer.joblib"))
+    with open(ensure_model("url_selected_features.json")) as f:
         selected_cols = json.load(f)
 
     # These estimators were trained with n_jobs=-1, which is right for
