@@ -44,6 +44,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from url_pipeline.explain import predict_url, load_artifacts as load_url_artifacts  # noqa: E402
 from malware_pipeline.explain import predict_sample, load_artifacts as load_malware_artifacts  # noqa: E402
 from malware_pipeline.explain_static import predict_sample as predict_static_sample  # noqa: E402
+from api.chatbot import ask_chatbot  # noqa: E402
 
 app = FastAPI(title="CyberXAI Detection API")
 
@@ -69,6 +70,12 @@ def _warm_model_cache():
 
 class URLRequest(BaseModel):
     url: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    context: Optional[dict] = None
+    history: Optional[list] = None
 
 
 @app.get("/")
@@ -196,6 +203,24 @@ def malware_sample(
         return predict_sample(task=task, row_index=row_index)
     except Exception as e:
         raise HTTPException(500, f"malware sample failed: {e}")
+
+
+@app.post("/api/chat")
+def chat(req: ChatRequest):
+    """Explains the current/last real scan result in plain English, grounded
+    in that scan's actual predicted_class/confidence/SHAP data (see
+    api/chatbot.py's docstring). Hidden in the frontend by default -- see
+    frontend/code.html's CHATBOT_ENABLED flag -- until the project is fully
+    tested, per explicit project decision."""
+    if not req.message or not req.message.strip():
+        raise HTTPException(400, "message must not be empty")
+    try:
+        reply = ask_chatbot(req.message.strip(), req.context, req.history)
+        return {"reply": reply}
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"chat failed: {e}")
 
 
 @app.get("/api/malware/static_sample")
