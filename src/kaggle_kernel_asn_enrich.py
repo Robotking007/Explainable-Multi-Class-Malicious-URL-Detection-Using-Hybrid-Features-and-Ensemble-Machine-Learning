@@ -15,6 +15,10 @@ Reads the domain list from the cyberxai-combined-urls dataset and any
 already-completed lookups from a prior run's cache dataset (if attached).
 Writes incremental checkpoints to /kaggle/working/asn_cache.csv.
 """
+import subprocess
+import sys
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tldextract"], check=False)
+
 import concurrent.futures
 import csv
 import socket
