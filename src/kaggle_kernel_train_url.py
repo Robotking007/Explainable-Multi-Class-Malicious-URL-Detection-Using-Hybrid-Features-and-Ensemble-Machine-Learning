@@ -46,9 +46,21 @@ from xgboost import XGBClassifier
 DATA_PATH = Path("/kaggle/input/cyberxai-combined-urls/combined_urls.csv")
 OUT_DIR = Path("/kaggle/working")
 TOP_K = 30
-NGRAM_FEATURES = 60
+NGRAM_FEATURES = 150
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
+# Cap for the two smallest classes (defacement/malware, ~200k/~187k) after
+# SMOTE -- NOT full parity with benign (10.89M). At 20M+ total rows,
+# fully balancing every class to match benign would need ~40M+ rows,
+# mostly synthetic/interpolated, which is both computationally
+# impractical and actively hurts generalization (SMOTE's linear
+# interpolation over sparse n-gram features tends to manufacture
+# unrealistic points rather than real diversity at this ratio). A moderate
+# 1.2M-row cap gives real headroom over the raw counts without drowning
+# the signal in synthetic noise, and class_weight="balanced" (RF/LR) plus
+# sample_weight (XGBoost) handles the remaining imbalance via the loss
+# function instead of via manufactured data.
+SMOTE_TARGET_PER_MINORITY_CLASS = 1_200_000
 
 
 def log(msg: str) -> None:
@@ -280,12 +292,23 @@ def main():
     gc.collect()
 
     log(f"Class counts before SMOTE:\n{y_train.value_counts()}")
-    smote = SMOTE(random_state=RANDOM_STATE)
+    # Capped, targeted SMOTE: only oversample classes below the cap, and
+    # only up to the cap -- NOT full parity with benign. See
+    # SMOTE_TARGET_PER_MINORITY_CLASS's definition above for why full
+    # parity at 20M+ rows would be both impractical and counterproductive.
+    counts = y_train.value_counts()
+    sampling_strategy = {
+        cls: SMOTE_TARGET_PER_MINORITY_CLASS
+        for cls, n in counts.items()
+        if n < SMOTE_TARGET_PER_MINORITY_CLASS
+    }
+    log(f"SMOTE sampling_strategy (capped, targeted): {sampling_strategy}")
+    smote = SMOTE(random_state=RANDOM_STATE, sampling_strategy=sampling_strategy)
     X_train_bal, y_train_bal = smote.fit_resample(X_train_scaled, y_train)
     X_train_bal_np = X_train_bal.astype(np.float32).to_numpy()
     del X_train_bal, X_train_scaled
     gc.collect()
-    log(f"Class counts after SMOTE:\n{pd.Series(y_train_bal).value_counts()}")
+    log(f"Class counts after capped SMOTE:\n{pd.Series(y_train_bal).value_counts()}")
 
     tmp_dir = OUT_DIR / "_tmp_arrays"
     tmp_dir.mkdir(exist_ok=True)
@@ -301,11 +324,21 @@ def main():
     y_test_enc = le.transform(y_test)
     classes = list(le.classes_)
 
+    # Remaining imbalance (benign ~10.9M vs. even the SMOTE-capped 1.2M
+    # defacement/malware) is handled via sample_weight rather than more
+    # synthetic oversampling -- VotingClassifier.fit(sample_weight=...)
+    # forwards the same weights to every member that supports them (RF,
+    # XGBoost, LR, GaussianNB all do), so this one array balances the loss
+    # for all four voters without needing per-estimator class_weight.
+    from sklearn.utils.class_weight import compute_sample_weight
+    sample_weight = compute_sample_weight("balanced", y_train_enc)
+    log(f"Computed balanced sample_weight over {len(np.unique(y_train_enc))} classes.")
+
     xgb_device = detect_xgb_device()
     log(f"Training Voting Classifier (RF + XGBoost[{xgb_device}] + LR + NB) ...")
     rf = RandomForestClassifier(n_estimators=300, random_state=RANDOM_STATE, n_jobs=1)
     xgb = XGBClassifier(
-        n_estimators=300, max_depth=8, learning_rate=0.1, random_state=RANDOM_STATE,
+        n_estimators=400, max_depth=8, learning_rate=0.08, random_state=RANDOM_STATE,
         n_jobs=-1, eval_metric="mlogloss", tree_method="hist", device=xgb_device,
     )
     lr = LogisticRegression(max_iter=1000, random_state=RANDOM_STATE, n_jobs=-1)
@@ -313,7 +346,7 @@ def main():
 
     voting = VotingClassifier(estimators=[("rf", rf), ("xgb", xgb), ("lr", lr), ("nb", nb)], voting="soft", n_jobs=None)
     t0 = time.time()
-    voting.fit(X_train_bal, y_train_enc)
+    voting.fit(X_train_bal, y_train_enc, sample_weight=sample_weight)
     log(f"Voting Classifier trained in {time.time() - t0:.1f}s")
 
     log("Evaluating on held-out test split ...")
