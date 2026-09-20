@@ -89,6 +89,9 @@ def log(msg: str) -> None:
 # phishing-only / malware-only feeds). A raw label value not present in
 # `mapping` is dropped (e.g. "spam" -- not one of our 4 classes).
 ADDITIONAL_SOURCES = [
+    # 12M-row Kaggle dataset (zhengxian142857/phishing-legitimate-website-
+    # link-and-domain), clean url/label schema, ~balanced phishing/legitimate.
+    ("zhengxian_12M_urls.csv", "input", "label", {"legitimate": "benign", "phishing": "phishing"}),
     # 6.1M-row Kaggle dataset (somanshumahajan/65-lakh-urls-labelled-as-1-and-0),
     # verified 0=benign/1=phishing by URL sampling (label=0 rows are real
     # sites like mclarenstore.com; label=1 rows are clear typosquats like
@@ -136,6 +139,16 @@ URLHAUS_PATH = DATASET_DIR / "file.csv.txt"
 
 # PhishVN: extracted from its zip (see module docstring, priority tier 6).
 PHISHVN_PATH = DATASET_DIR / "PhishVN A Time-Stamped Vietnamese URL Phishing Dat" / "data" / "dataset_url.csv"
+
+# satyammishra0/website-url-with-industry: no label column at all (it's a
+# business/industry categorization dataset, not a security one) -- every
+# row is, by construction, a real registered company website, so every
+# row is safely benign. Capped to a 1.5M-row sample (from 13.6M available)
+# on purpose: taking the full set would push benign so far ahead that
+# SMOTE's balance-to-majority-class step would need tens of millions of
+# synthetic rows for every minority class, making training infeasible even
+# on Kaggle.
+SATYAMMISHRA_PATH = DATASET_DIR / "satyammishra_1.5M_benign_domains.csv"
 
 # ThreatFox: authenticated bulk export (src/fetch_abusech_data.py), same
 # malware-only priority tier as URLhaus -- payload-delivery/botnet-C2/
@@ -201,8 +214,14 @@ def main():
     tf["norm"] = tf["ioc_value"].astype(str).apply(normalize_url)
     log(f"ThreatFox usable rows: {len(tf)}")
 
+    log("Loading satyammishra0 benign-domain sample (no label col -- all benign by construction)...")
+    sm = pd.read_csv(SATYAMMISHRA_PATH, usecols=["website"]).dropna(subset=["website"])
+    sm["type"] = "benign"
+    sm["norm"] = sm["website"].astype(str).apply(normalize_url)
+    log(f"satyammishra0 usable rows: {len(sm)}")
+
     frames = [v[["norm", "type"]], uh[["norm", "type"]], mud[["norm", "type"]], m[["norm", "type"]],
-              mu[["norm", "type"]], pv[["norm", "type"]], tf[["norm", "type"]]]
+              mu[["norm", "type"]], pv[["norm", "type"]], tf[["norm", "type"]], sm[["norm", "type"]]]
 
     for filename, url_col, label_col, mapping in ADDITIONAL_SOURCES:
         log(f"Loading {filename}...")
