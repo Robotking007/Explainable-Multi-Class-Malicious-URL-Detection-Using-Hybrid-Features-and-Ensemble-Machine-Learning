@@ -46,7 +46,7 @@ from xgboost import XGBClassifier
 DATA_PATH = Path("/kaggle/input/cyberxai-combined-urls/combined_urls.csv")
 OUT_DIR = Path("/kaggle/working")
 TOP_K = 30
-NGRAM_FEATURES = 150
+NGRAM_FEATURES = 100
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
 # Cap for the two smallest classes (defacement/malware, ~200k/~187k) after
@@ -195,16 +195,32 @@ def extract_features_row(raw_url: str) -> dict:
 
 def build_static_features(urls: pd.Series) -> pd.DataFrame:
     records = urls.astype(str).apply(extract_features_row)
-    return pd.DataFrame(list(records))
+    df = pd.DataFrame(list(records))
+    # float64->float32 here (not just later at the scaler step) since this
+    # DataFrame briefly coexists with the n-gram block during pd.concat --
+    # halving it reduces that peak, the same OOM-mitigation reasoning as
+    # build_ngram_features' float32 cast above.
+    float_cols = df.select_dtypes(include="float64").columns
+    df[float_cols] = df[float_cols].astype(np.float32)
+    return df
 
 
 def build_ngram_features(train_urls: pd.Series, test_urls: pd.Series, max_features: int = 100):
+    # OOM history: at ~20M rows, TfidfVectorizer's default float64 sparse
+    # output, densified via .toarray(), needs rows*max_features*8 bytes --
+    # at max_features=150 that's ~19GB for the train split alone (16M rows),
+    # which OOM-killed a full training run after 4.3h of otherwise-successful
+    # static feature extraction (no crash traceback -- the Linux OOM killer
+    # just SIGKILLs the process, nothing to catch). Casting the sparse
+    # matrix to float32 BEFORE densifying (not after) means the dense array
+    # is float32 from the moment it's allocated -- never briefly exists as
+    # the larger float64 form -- roughly halving this block's peak memory.
     from sklearn.feature_extraction.text import TfidfVectorizer
     train_norm = train_urls.astype(str).apply(normalize_url)
     test_norm = test_urls.astype(str).apply(normalize_url)
     vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 3), max_features=max_features)
-    X_train = vectorizer.fit_transform(train_norm)
-    X_test = vectorizer.transform(test_norm)
+    X_train = vectorizer.fit_transform(train_norm).astype(np.float32)
+    X_test = vectorizer.transform(test_norm).astype(np.float32)
     cols = [f"ngram_{i}" for i in range(X_train.shape[1])]
     train_df = pd.DataFrame(X_train.toarray(), columns=cols)
     test_df = pd.DataFrame(X_test.toarray(), columns=cols)

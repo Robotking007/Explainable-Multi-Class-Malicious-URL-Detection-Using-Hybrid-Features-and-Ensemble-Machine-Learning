@@ -206,20 +206,37 @@ def extract_features_row(raw_url: str) -> dict:
 def build_static_features(urls: pd.Series) -> pd.DataFrame:
     """Vectorized-ish wrapper: apply extract_features_row over a Series of URLs."""
     records = urls.astype(str).apply(extract_features_row)
-    return pd.DataFrame(list(records))
+    df = pd.DataFrame(list(records))
+    # float64->float32: at ~20M-row scale this DataFrame briefly coexists
+    # with the (also large) n-gram block during pd.concat in train.py --
+    # halving it here reduces that peak. See build_ngram_features' own
+    # float32 cast below for the OOM history that motivated both.
+    float_cols = df.select_dtypes(include="float64").columns
+    df[float_cols] = df[float_cols].astype(np.float32)
+    return df
 
 
 def build_ngram_features(train_urls: pd.Series, test_urls: pd.Series, max_features: int = 100):
     """Char-level TF-IDF n-gram block ([P1]/[P3] 'TF-IDF/N-gram' feature type).
-    Fit ONLY on the training split to avoid leakage; transform both splits."""
+    Fit ONLY on the training split to avoid leakage; transform both splits.
+
+    OOM history: at ~20M rows, TfidfVectorizer's default float64 sparse
+    output, densified via .toarray(), needs rows*max_features*8 bytes --
+    at max_features=150 that's ~19GB for a 16M-row train split alone,
+    which OOM-killed a full production training run on Kaggle after 4.3h
+    of otherwise-successful static feature extraction (no traceback --
+    the Linux OOM killer just SIGKILLs the process). Casting the sparse
+    matrix to float32 BEFORE densifying (not after) means the dense array
+    is float32 from the moment it's allocated, roughly halving this
+    block's peak memory."""
     from sklearn.feature_extraction.text import TfidfVectorizer
 
     train_norm = train_urls.astype(str).apply(normalize_url)
     test_norm = test_urls.astype(str).apply(normalize_url)
 
     vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 3), max_features=max_features)
-    X_train = vectorizer.fit_transform(train_norm)
-    X_test = vectorizer.transform(test_norm)
+    X_train = vectorizer.fit_transform(train_norm).astype(np.float32)
+    X_test = vectorizer.transform(test_norm).astype(np.float32)
     cols = [f"ngram_{i}" for i in range(X_train.shape[1])]
     train_df = pd.DataFrame(X_train.toarray(), columns=cols)
     test_df = pd.DataFrame(X_test.toarray(), columns=cols)

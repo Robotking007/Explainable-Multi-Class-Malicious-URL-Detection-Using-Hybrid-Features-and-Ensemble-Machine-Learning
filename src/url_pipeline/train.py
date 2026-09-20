@@ -91,7 +91,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample-size", type=int, default=0, help="0 = full dataset")
     ap.add_argument("--top-k", type=int, default=30, help="Top-K engineered features to keep (RF importance)")
-    ap.add_argument("--ngram-features", type=int, default=150, help="char n-gram TF-IDF vocab size")
+    ap.add_argument("--ngram-features", type=int, default=100,
+                     help="char n-gram TF-IDF vocab size (150 OOM-killed a full 20M-row Kaggle run -- "
+                          "see build_ngram_features()'s docstring in features.py)")
     ap.add_argument("--smote-target", type=int, default=1_200_000,
                      help="Cap for minority-class SMOTE oversampling (not full parity with the majority class -- "
                           "see kaggle_kernel_train_url.py's SMOTE_TARGET_PER_MINORITY_CLASS for why)")
