@@ -89,6 +89,16 @@ def log(msg: str) -> None:
 # phishing-only / malware-only feeds). A raw label value not present in
 # `mapping` is dropped (e.g. "spam" -- not one of our 4 classes).
 ADDITIONAL_SOURCES = [
+    # 6.1M-row Kaggle dataset (somanshumahajan/65-lakh-urls-labelled-as-1-and-0),
+    # verified 0=benign/1=phishing by URL sampling (label=0 rows are real
+    # sites like mclarenstore.com; label=1 rows are clear typosquats like
+    # "blizzardenteaitaccoutmanagementv.com" and "chase.com.asp72.com").
+    ("somanshumahajan_6M_urls.csv", "url", "label", {0: "benign", 1: "phishing"}),
+    # HF dataset kmack/Phishing_urls (708,820 rows, train+test+valid
+    # concatenated), verified 0=benign/1=phishing via a full-column sample
+    # (label=0: en.wikipedia.org, fi.edu, unsw.edu.au; label=1: brand-
+    # impersonation subdomains, typosquats).
+    ("kmack_phishing_urls.csv", "url", "label", {0: "benign", 1: "phishing"}),
     # Direct 4-class match, no mapping ambiguity.
     ("Malicious URL v3.csv", "url", "type",
         {"benign": "benign", "phishing": "phishing", "defacement": "defacement", "malware": "malware"}),
