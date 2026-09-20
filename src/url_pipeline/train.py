@@ -91,7 +91,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample-size", type=int, default=0, help="0 = full dataset")
     ap.add_argument("--top-k", type=int, default=30, help="Top-K engineered features to keep (RF importance)")
-    ap.add_argument("--ngram-features", type=int, default=60, help="char n-gram TF-IDF vocab size")
+    ap.add_argument("--ngram-features", type=int, default=150, help="char n-gram TF-IDF vocab size")
+    ap.add_argument("--smote-target", type=int, default=1_200_000,
+                     help="Cap for minority-class SMOTE oversampling (not full parity with the majority class -- "
+                          "see kaggle_kernel_train_url.py's SMOTE_TARGET_PER_MINORITY_CLASS for why)")
     ap.add_argument("--test-size", type=float, default=0.2)
     ap.add_argument("--random-state", type=int, default=42)
     ap.add_argument("--data-path", type=str, default=str(DATA_PATH),
@@ -177,13 +180,24 @@ def main():
     gc.collect()
 
     # ---- SMOTE on train split only ----
+    # Capped, targeted: only classes below args.smote_target get
+    # oversampled, and only up to that cap -- NOT full parity with the
+    # majority class. At large row counts, full parity means tens of
+    # millions of mostly-synthetic rows, which is both impractical and
+    # actively hurts generalization (SMOTE's linear interpolation over
+    # sparse n-gram features manufactures unrealistic points at extreme
+    # oversampling ratios). Remaining imbalance is handled via
+    # sample_weight at fit time instead (see below).
     log(f"Class counts before SMOTE:\n{y_train.value_counts()}")
-    smote = SMOTE(random_state=args.random_state)
+    counts = y_train.value_counts()
+    sampling_strategy = {cls: args.smote_target for cls, n in counts.items() if n < args.smote_target}
+    log(f"SMOTE sampling_strategy (capped, targeted): {sampling_strategy}")
+    smote = SMOTE(random_state=args.random_state, sampling_strategy=sampling_strategy or "auto")
     X_train_bal, y_train_bal = smote.fit_resample(X_train_scaled, y_train)
     X_train_bal_np = X_train_bal.astype(np.float32).to_numpy()
     del X_train_bal, X_train_scaled
     gc.collect()
-    log(f"Class counts after SMOTE:\n{pd.Series(y_train_bal).value_counts()}")
+    log(f"Class counts after capped SMOTE:\n{pd.Series(y_train_bal).value_counts()}")
 
     # Move the SMOTE-balanced matrix to a disk-backed memmap on D: (same
     # technique that fixed train_static_baseline.py's pool-building crash).
@@ -213,6 +227,17 @@ def main():
     classes = list(le.classes_)
 
     # ---- Voting Classifier: RF + XGBoost + LR + NB ([P2]) ----
+    # Remaining imbalance after the capped SMOTE (benign/phishing still
+    # outnumber the capped defacement/malware classes) is handled via
+    # sample_weight rather than more synthetic oversampling --
+    # VotingClassifier.fit(sample_weight=...) forwards the same weights to
+    # every member that supports them (RF, XGBoost, LR, GaussianNB all do),
+    # so this one array balances the loss for all four voters without
+    # needing per-estimator class_weight.
+    from sklearn.utils.class_weight import compute_sample_weight
+    sample_weight = compute_sample_weight("balanced", y_train_enc)
+    log(f"Computed balanced sample_weight over {len(np.unique(y_train_enc))} classes.")
+
     xgb_device = detect_xgb_device()
     log(f"Training Voting Classifier (RF + XGBoost[{xgb_device}] + LR + NB) ...")
     # n_jobs=1: same reasoning as rf_selector above, and now fitting on the
@@ -221,7 +246,7 @@ def main():
     # higher than the pre-SMOTE selector's.
     rf = RandomForestClassifier(n_estimators=300, random_state=args.random_state, n_jobs=1)
     xgb = XGBClassifier(
-        n_estimators=300, max_depth=8, learning_rate=0.1, random_state=args.random_state,
+        n_estimators=400, max_depth=8, learning_rate=0.08, random_state=args.random_state,
         n_jobs=6, eval_metric="mlogloss", tree_method="hist", device=xgb_device,
     )
     lr = LogisticRegression(max_iter=1000, random_state=args.random_state, n_jobs=4)
@@ -238,7 +263,7 @@ def main():
         estimators=[("rf", rf), ("xgb", xgb), ("lr", lr), ("nb", nb)], voting="soft", n_jobs=None
     )
     t0 = time.time()
-    voting.fit(X_train_bal, y_train_enc)
+    voting.fit(X_train_bal, y_train_enc, sample_weight=sample_weight)
     log(f"Voting Classifier trained in {time.time() - t0:.1f}s")
 
     # ---- Evaluate ----
