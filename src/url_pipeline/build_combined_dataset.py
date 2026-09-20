@@ -129,6 +129,18 @@ ADDITIONAL_SOURCES = [
     ("balanced_urls.csv", "url", "label", {"benign": "benign"}),
     ("Dataset I.csv", "Websites", "Lable", {"Benign": "benign"}),
     ("Dataset II.csv", "URL", "type", {"Benign": "benign"}),
+    # HF phreshphish/phreshphish (666,315 rows: 367,989 benign / 298,326
+    # phish), collected 2025-2026 -- fresh, out-of-time real phishing/benign
+    # URL+HTML pairs (only url/label columns are used here; HTML wasn't
+    # downloaded). Direct url/label schema, string labels "benign"/"phish".
+    ("phreshphish_urls.csv", "url", "label", {"benign": "benign", "phish": "phishing"}),
+    # HF Naren1704/phishing-dataset's "urls.json" config (835,697 rows),
+    # itself a compilation of a Kaggle 800K-URL set + JPCERT/PhishTank/
+    # OpenPhish-derived sources. label=1 Phishing / label=0 Benign per the
+    # dataset card. Heavy overlap with existing sources is expected and
+    # harmless -- duplicates just resolve to whichever higher-priority
+    # source already has the URL, per this module's dedup step.
+    ("naren1704_urls.csv", "text", "label", {0: "benign", 1: "phishing"}),
 ]
 
 # abuse.ch URLhaus dump: no url/label columns to map -- every row is a
