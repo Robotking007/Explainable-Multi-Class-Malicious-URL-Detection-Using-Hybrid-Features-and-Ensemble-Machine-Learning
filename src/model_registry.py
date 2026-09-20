@@ -13,6 +13,7 @@ zero cost when nothing's missing.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +22,12 @@ HF_REPO_SUFFIX = "cyberxai-models"
 
 
 def _load_hf_token() -> str | None:
+    # Real env var first: how HF Spaces injects secrets at runtime (no
+    # .env file exists inside the container). Falls back to .env for
+    # local development, where that's how every other secret is stored.
+    env_token = os.environ.get("HF_TOKEN")
+    if env_token:
+        return env_token
     env_path = ROOT / ".env"
     if not env_path.exists():
         return None
