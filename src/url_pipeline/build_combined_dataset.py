@@ -127,6 +127,12 @@ URLHAUS_PATH = DATASET_DIR / "file.csv.txt"
 # PhishVN: extracted from its zip (see module docstring, priority tier 6).
 PHISHVN_PATH = DATASET_DIR / "PhishVN A Time-Stamped Vietnamese URL Phishing Dat" / "data" / "dataset_url.csv"
 
+# ThreatFox: authenticated bulk export (src/fetch_abusech_data.py), same
+# malware-only priority tier as URLhaus -- payload-delivery/botnet-C2/
+# skimming infrastructure, not phishing. Comment-prefixed CSV with quoted,
+# space-padded fields (") "value"") -- skipinitialspace handles that.
+THREATFOX_PATH = DATASET_DIR / "threatfox_full.csv"
+
 
 def _load_additional(filename, url_col, label_col, mapping):
     path = DATASET_DIR / filename
@@ -175,8 +181,18 @@ def main():
     pv["norm"] = pv["url"].astype(str).apply(normalize_url)
     log(f"PhishVN usable rows: {len(pv)}")
 
+    log("Loading ThreatFox (url/domain IOCs, malware-only)...")
+    tf = pd.read_csv(THREATFOX_PATH, comment="#", header=None, skipinitialspace=True,
+                      names=["first_seen_utc", "ioc_id", "ioc_value", "ioc_type", "threat_type",
+                             "fk_malware", "malware_alias", "malware_printable", "last_seen_utc",
+                             "confidence_level", "is_compromised", "reference", "tags", "anonymous", "reporter"])
+    tf = tf[tf["ioc_type"].isin(["url", "domain"])].dropna(subset=["ioc_value"])
+    tf["type"] = "malware"
+    tf["norm"] = tf["ioc_value"].astype(str).apply(normalize_url)
+    log(f"ThreatFox usable rows: {len(tf)}")
+
     frames = [v[["norm", "type"]], uh[["norm", "type"]], mud[["norm", "type"]], m[["norm", "type"]],
-              mu[["norm", "type"]], pv[["norm", "type"]]]
+              mu[["norm", "type"]], pv[["norm", "type"]], tf[["norm", "type"]]]
 
     for filename, url_col, label_col, mapping in ADDITIONAL_SOURCES:
         log(f"Loading {filename}...")
