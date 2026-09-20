@@ -75,6 +75,14 @@ def main():
     log(f"{len(files)} output file(s) found.")
     for f in files:
         file_name = getattr(f, "file_name", None) or getattr(f, "name", None) or str(f)
+        # _tmp_arrays/* are the multi-GB memmap scratch files the training
+        # scripts write to /kaggle/working/ as a memory-crash workaround
+        # (see kaggle_kernel_train_static_malware.py) -- not real outputs,
+        # and downloading them would waste a lot of time/bandwidth for
+        # nothing usable.
+        if file_name.startswith("_tmp_arrays/") or file_name.startswith("_tmp_arrays\\"):
+            log(f"Skipping scratch file {file_name}")
+            continue
         log(f"Downloading {file_name} ...")
         dl_req = ApiDownloadKernelOutputRequest()
         dl_req.owner_slug = USER_NAME
@@ -82,8 +90,10 @@ def main():
         dl_req.file_path = file_name
         with client:
             redirect = client.kernels.kernels_api_client.download_kernel_output(dl_req)
-        urllib.request.urlretrieve(redirect.url, OUT_DIR / file_name)
-        log(f"  saved to {OUT_DIR / file_name}")
+        dest = OUT_DIR / file_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(redirect.url, dest)
+        log(f"  saved to {dest}")
 
     log(f"All output downloaded to {OUT_DIR}")
 
