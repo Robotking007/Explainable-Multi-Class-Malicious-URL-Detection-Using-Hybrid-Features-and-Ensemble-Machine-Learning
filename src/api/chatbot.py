@@ -18,6 +18,7 @@ frontend only ever talks to this backend, never to Gemini directly).
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -39,6 +40,11 @@ SYSTEM_PREAMBLE = (
 
 
 def _load_api_key() -> str | None:
+    # Real env var first (how HF Spaces injects secrets at runtime -- no
+    # .env file exists inside the container); falls back to .env locally.
+    env_key = os.environ.get("GEMINI_API_KEY")
+    if env_key:
+        return env_key
     env_path = ROOT / ".env"
     if not env_path.exists():
         return None
