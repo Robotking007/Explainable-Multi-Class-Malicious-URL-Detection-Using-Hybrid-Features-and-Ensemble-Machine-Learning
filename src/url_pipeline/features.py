@@ -127,7 +127,10 @@ def extract_features_row(raw_url: str) -> dict:
     domain = ext.domain or ""
     subdomain = ext.subdomain or ""
     suffix = ext.suffix or ""
-    registered_domain = ext.registered_domain or hostname
+    # top_domain_under_public_suffix, not the deprecated registered_domain --
+    # same value, no per-call DeprecationWarning (see kaggle_kernel_train_url.py's
+    # copy of this line for why that mattered in practice).
+    registered_domain = ext.top_domain_under_public_suffix or hostname
 
     lower_url = url.lower()
 

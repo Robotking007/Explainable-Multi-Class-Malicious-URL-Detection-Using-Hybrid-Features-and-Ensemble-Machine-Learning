@@ -23,7 +23,10 @@ import json
 import math
 import re
 import time
+import warnings
 import zlib
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -136,7 +139,14 @@ def extract_features_row(raw_url: str) -> dict:
     domain = ext.domain or ""
     subdomain = ext.subdomain or ""
     suffix = ext.suffix or ""
-    registered_domain = ext.registered_domain or hostname
+    # top_domain_under_public_suffix, not the deprecated registered_domain --
+    # same value, but doesn't emit a DeprecationWarning on every single call.
+    # At ~20M rows that warning (even though Python's default filter should
+    # dedupe by call site) was somehow repeating enough to completely fill
+    # Kaggle's returned log buffer, hiding every real log() line after
+    # static-feature extraction started -- exactly the output needed to
+    # tell where the OOM kill actually happened.
+    registered_domain = ext.top_domain_under_public_suffix or hostname
     lower_url = url.lower()
     feats = {}
 
@@ -227,6 +237,29 @@ def build_ngram_features(train_urls: pd.Series, test_urls: pd.Series, max_featur
     return train_df, test_df, vectorizer
 
 
+def fit_ngram_vectorizer(train_urls: pd.Series, max_features: int = 100):
+    """Split out of build_ngram_features so main() can fit+densify the train
+    n-gram block, use it, and free it BEFORE building the test block --
+    the two were previously built together, so both stayed alive at once
+    even though the train block is only needed early (for the final
+    concat) and the test block only later (for evaluation). Sequencing
+    them cuts this block's peak memory roughly in half again."""
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    train_norm = train_urls.astype(str).apply(normalize_url)
+    vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 3), max_features=max_features)
+    X_train = vectorizer.fit_transform(train_norm).astype(np.float32)
+    cols = [f"ngram_{i}" for i in range(X_train.shape[1])]
+    train_df = pd.DataFrame(X_train.toarray(), columns=cols)
+    return train_df, vectorizer
+
+
+def transform_ngram_features(vectorizer, urls: pd.Series) -> pd.DataFrame:
+    norm = urls.astype(str).apply(normalize_url)
+    X = vectorizer.transform(norm).astype(np.float32)
+    cols = [f"ngram_{i}" for i in range(X.shape[1])]
+    return pd.DataFrame(X.toarray(), columns=cols)
+
+
 def detect_xgb_device() -> str:
     try:
         import xgboost as xgb_mod
@@ -273,33 +306,66 @@ def main():
     log("Splitting train/test (stratified, 80/20)")
     train_df, test_df = train_test_split(df, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=df["type"])
 
-    log(f"Extracting static features on {len(train_df)} train + {len(test_df)} test URLs ...")
-    t0 = time.time()
-    X_train_static = build_static_features(train_df["url"])
-    X_test_static = build_static_features(test_df["url"])
-    log(f"Static feature extraction done in {time.time() - t0:.1f}s. Shape: {X_train_static.shape}")
-
-    log(f"Building char n-gram TF-IDF block (max_features={NGRAM_FEATURES}, fit on train only)")
-    X_train_ngram, X_test_ngram, vectorizer = build_ngram_features(train_df["url"], test_df["url"], max_features=NGRAM_FEATURES)
-
-    X_train_full = pd.concat([X_train_static.reset_index(drop=True), X_train_ngram.reset_index(drop=True)], axis=1)
-    X_test_full = pd.concat([X_test_static.reset_index(drop=True), X_test_ngram.reset_index(drop=True)], axis=1)
     y_train = train_df["type"].reset_index(drop=True)
     y_test = test_df["type"].reset_index(drop=True)
-    log(f"Combined feature matrix: {X_train_full.shape[1]} features ({X_train_static.shape[1]} engineered + {X_train_ngram.shape[1]} n-gram)")
+    train_urls = train_df["url"].reset_index(drop=True)
+    test_urls = test_df["url"].reset_index(drop=True)
+    del df, train_df, test_df
+    gc.collect()
 
-    log("Ranking engineered features by Random Forest importance ...")
+    # OOM history: two prior runs on this ~20.9M-row dataset were SIGKILLed
+    # by the Linux OOM killer (no traceback -- OOM kills leave nothing to
+    # catch). float32 dtypes alone (a first fix attempt) weren't enough --
+    # the real problem was that the OLD code built X_train_static (45 cols),
+    # X_train_ngram (100 cols), X_train_full (=concat of both, a NEW copy),
+    # and X_train_sel (=a subset of X_train_full, ANOTHER new copy) for
+    # both train AND test, all without freeing any of the precursors until
+    # everything was built -- up to ~7 large, nearly-redundant copies of
+    # the same rows alive simultaneously (estimated ~35-40GB peak on the
+    # train split alone). This version processes train and test
+    # sequentially and deletes each precursor immediately after its last
+    # use, so at most ~2 large arrays are ever alive at once.
+    log(f"Extracting static features on {len(train_urls)} train + {len(test_urls)} test URLs ...")
+    t0 = time.time()
+    X_train_static = build_static_features(train_urls)
+    log(f"Train static features done in {time.time() - t0:.1f}s. Shape: {X_train_static.shape}")
+
+    log("Ranking engineered features by Random Forest importance (on train static features only) ...")
     rf_selector = RandomForestClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=1)
     rf_selector.fit(X_train_static, y_train)
     importances = pd.Series(rf_selector.feature_importances_, index=X_train_static.columns)
     top_k_cols = importances.sort_values(ascending=False).head(TOP_K).index.tolist()
     log(f"Top-{TOP_K} engineered features selected:\n{importances.sort_values(ascending=False).head(TOP_K)}")
-
-    selected_cols = top_k_cols + list(X_train_ngram.columns)
-    X_train_sel = X_train_full[selected_cols]
-    X_test_sel = X_test_full[selected_cols]
-    del X_train_full, X_test_full, X_train_static, X_test_static, X_train_ngram, X_test_ngram, rf_selector
+    del rf_selector
+    X_train_static_sel = X_train_static[top_k_cols].copy()
+    del X_train_static
     gc.collect()
+
+    t0 = time.time()
+    X_test_static = build_static_features(test_urls)
+    X_test_static_sel = X_test_static[top_k_cols].copy()
+    del X_test_static
+    gc.collect()
+    log(f"Test static features done in {time.time() - t0:.1f}s.")
+
+    log(f"Building char n-gram TF-IDF block (max_features={NGRAM_FEATURES}, fit on train only)")
+    X_train_ngram, vectorizer = fit_ngram_vectorizer(train_urls, max_features=NGRAM_FEATURES)
+    ngram_cols = list(X_train_ngram.columns)
+    selected_cols = top_k_cols + ngram_cols
+
+    X_train_sel = pd.concat(
+        [X_train_static_sel.reset_index(drop=True), X_train_ngram.reset_index(drop=True)], axis=1
+    )[selected_cols]
+    del X_train_static_sel, X_train_ngram
+    gc.collect()
+
+    X_test_ngram = transform_ngram_features(vectorizer, test_urls)
+    X_test_sel = pd.concat(
+        [X_test_static_sel.reset_index(drop=True), X_test_ngram.reset_index(drop=True)], axis=1
+    )[selected_cols]
+    del X_test_static_sel, X_test_ngram
+    gc.collect()
+    log(f"Combined + selected feature matrix: {len(selected_cols)} features ({len(top_k_cols)} engineered + {len(ngram_cols)} n-gram)")
 
     scaler = MinMaxScaler()
     X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train_sel), columns=selected_cols, dtype=np.float32)
