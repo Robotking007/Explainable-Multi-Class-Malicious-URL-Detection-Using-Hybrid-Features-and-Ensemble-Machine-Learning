@@ -206,17 +206,31 @@ def extract_features_row(raw_url: str) -> dict:
     return feats
 
 
-def build_static_features(urls: pd.Series) -> pd.DataFrame:
-    """Vectorized-ish wrapper: apply extract_features_row over a Series of URLs."""
-    records = urls.astype(str).apply(extract_features_row)
-    df = pd.DataFrame(list(records))
-    # float64->float32: at ~20M-row scale this DataFrame briefly coexists
-    # with the (also large) n-gram block during pd.concat in train.py --
-    # halving it here reduces that peak. See build_ngram_features' own
-    # float32 cast below for the OOM history that motivated both.
-    float_cols = df.select_dtypes(include="float64").columns
-    df[float_cols] = df[float_cols].astype(np.float32)
-    return df
+def build_static_features(urls: pd.Series, chunk_size: int = 500_000) -> pd.DataFrame:
+    """Vectorized-ish wrapper: apply extract_features_row over a Series of URLs.
+
+    Chunked on purpose: `urls.apply(extract_features_row)` builds one Python
+    dict per row (45 keys each) and holds ALL of them in memory as a pandas
+    Series of objects before pd.DataFrame() ever converts them to compact
+    columnar arrays. A dict's fixed per-instance overhead (hash table,
+    key/value slots) means this raw-object intermediate form, at ~20M-row
+    scale, needs far more memory than the final float32 DataFrame would --
+    this OOM-killed a production Kaggle run even before n-gram/concat ever
+    started. Processing in chunks bounds how many raw dicts are ever alive
+    at once to chunk_size, not the full row count."""
+    chunks = []
+    n = len(urls)
+    for start in range(0, n, chunk_size):
+        chunk_urls = urls.iloc[start:start + chunk_size].astype(str)
+        records = chunk_urls.apply(extract_features_row)
+        chunk_df = pd.DataFrame(list(records))
+        float_cols = chunk_df.select_dtypes(include="float64").columns
+        chunk_df[float_cols] = chunk_df[float_cols].astype(np.float32)
+        int_cols = chunk_df.select_dtypes(include="int64").columns
+        chunk_df[int_cols] = chunk_df[int_cols].astype(np.int32)
+        chunks.append(chunk_df)
+        del records, chunk_df, chunk_urls
+    return pd.concat(chunks, ignore_index=True)
 
 
 def build_ngram_features(train_urls: pd.Series, test_urls: pd.Series, max_features: int = 100):
