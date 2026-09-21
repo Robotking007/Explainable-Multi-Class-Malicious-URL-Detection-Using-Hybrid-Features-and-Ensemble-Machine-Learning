@@ -56,8 +56,22 @@ def main():
     terminal_states = {KernelWorkerStatus.COMPLETE, KernelWorkerStatus.ERROR, KernelWorkerStatus.CANCEL_ACKNOWLEDGED}
     state = None
     while True:
-        with client:
-            status = client.kernels.kernels_api_client.get_kernel_session_status(status_req)
+        # A transient local network/DNS blip (this laptop's own connection,
+        # not Kaggle) previously killed this whole script -- the actual
+        # Kaggle kernel kept running fine, but the local watcher died and
+        # had to be noticed and restarted by hand. Retrying a few times
+        # before giving up means a brief local outage no longer requires
+        # manual intervention.
+        for attempt in range(5):
+            try:
+                with client:
+                    status = client.kernels.kernels_api_client.get_kernel_session_status(status_req)
+                break
+            except Exception as e:
+                if attempt == 4:
+                    raise
+                log(f"Status check failed (attempt {attempt + 1}/5), retrying in 30s: {e}")
+                time.sleep(30)
         state = status.status
         log(f"Kernel status: {state}")
         if state in terminal_states:
