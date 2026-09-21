@@ -3,8 +3,13 @@ Poll the Kaggle kernel's status until it finishes (COMPLETE/ERROR/CANCELLED),
 then download its output files (trained models) to models/from_kaggle/.
 
 Usage:
-    python src/kaggle_watch_kernel.py [kernel-slug] [output-subdir]
-    (defaults: cyberxai-url-module-b-training, from_kaggle)
+    python src/kaggle_watch_kernel.py [kernel-slug] [output-subdir] [user-name] [token-file-name]
+    (defaults: cyberxai-url-module-b-training, from_kaggle, siddudavant, access_token)
+
+    The last two args let this watch a kernel pushed under the second
+    Kaggle account (siddhantudavant, used to work around the primary
+    account's weekly compute-quota cap) -- e.g.:
+    python src/kaggle_watch_kernel.py cyberxai-url-module-b-training from_kaggle_acct2 siddhantudavant access_token_2
 """
 from __future__ import annotations
 
@@ -14,10 +19,11 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_PATH = Path.home() / ".kaggle" / "access_token"
-USER_NAME = "siddudavant"
 KERNEL_SLUG = sys.argv[1] if len(sys.argv) > 1 else "cyberxai-url-module-b-training"
 OUT_SUBDIR = sys.argv[2] if len(sys.argv) > 2 else "from_kaggle"
+USER_NAME = sys.argv[3] if len(sys.argv) > 3 else "siddudavant"
+TOKEN_FILE_NAME = sys.argv[4] if len(sys.argv) > 4 else "access_token"
+TOKEN_PATH = Path.home() / ".kaggle" / TOKEN_FILE_NAME
 OUT_DIR = ROOT / "models" / OUT_SUBDIR
 POLL_SECONDS = 60
 
