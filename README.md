@@ -60,7 +60,49 @@ Hugging Face datasets, PhishTank's live feed, abuse.ch ThreatFox/URLhaus) by
 URLs that appear in more than one source under a different label (never silently dropped).
 
 **Current size: 20,946,068 rows** — benign 11,292,992 / phishing 9,264,267 / defacement 201,997 /
-malware 186,812.
+malware 186,812. Cross-source label disagreement (the same URL appearing under a different class in
+two sources) affects ~2.16% of unique URLs — resolved by the priority order below, never dropped.
+
+<details>
+<summary><strong>Full list of merged sources (click to expand)</strong></summary>
+
+Merged in explicit priority order (highest first — wins on label disagreement):
+
+1. `verified_online.csv` — PhishTank's live-verified feed (phishing-only, human-verified)
+2. `file.csv.txt` — abuse.ch URLhaus dump (malware-only, curated threat feed)
+3. `MUD_malicious_urls_2026_V2.csv` — newer (2026), large 4-class corpus
+4. `malicious_phish.csv` — original corpus (2021/2022 vintage), 4-class
+5. `merged_urls_dataset.csv` — 3.9M rows total, 3.37M out-of-taxonomy "adult" rows dropped
+6. `PhishVN.../dataset_url.csv` — PhishVN v3.1.0 (Vietnamese phishing dataset)
+7. `zhengxian_12M_urls.csv` — 12M-row Kaggle set (legitimate/phishing)
+8. `somanshumahajan_6M_urls.csv` — 6.1M-row Kaggle set (0=benign/1=phishing, label polarity verified by URL sampling)
+9. `kmack_phishing_urls.csv` — HF dataset, 708,820 rows (0=benign/1=phishing, verified)
+10. `Malicious URL v3.csv` / `Malicious URL Detection.csv` — direct 4-class match
+11. `ASA_Phishing_URL_Dataset.csv`, `URL dataset.csv`, `StealthPhisher2025.csv` — legitimate/phishing
+12. `Phishing URLs.csv` — phishing-only
+13. `Dataset.csv`, `DomainGuard-50K.csv`, `dataset2.csv` — binary 0=benign/1=phishing (verified)
+14. `url_features_extracted1.csv`, `PhiUSIIL_Phishing_URL_Dataset.csv` — binary, **inverted** polarity
+    (1=benign/0=phishing) — verified by sampling; the opposite convention from #13's sources, so
+    getting this backwards would have silently mislabeled hundreds of thousands of rows
+15. `balanced_urls.csv`, `Dataset I.csv`, `Dataset II.csv` — ambiguous "benign vs malicious" sources;
+    only the benign side is usable (the malicious side doesn't say which of phishing/defacement/
+    malware it is, so guessing would fabricate a label)
+16. `phreshphish_urls.csv` — HF `phreshphish/phreshphish`, 666,315 rows collected 2025-2026 (fresh,
+    out-of-time real phishing/benign URL+HTML pairs; only url/label used, HTML not downloaded)
+17. `naren1704_urls.csv` — HF `Naren1704/phishing-dataset`'s `urls.json` config, 835,697 rows (a
+    compilation of a Kaggle 800K-URL set plus JPCERT/PhishTank/OpenPhish-derived sources; heavy
+    overlap with sources above is expected and harmless, resolved by the same dedup step)
+18. `threatfox_full.csv` / refreshed `file.csv.txt` — abuse.ch ThreatFox bulk export (authenticated,
+    `fetch_abusech_data.py`), malware-only
+19. `satyammishra_1.5M_benign_domains.csv` — capped sample (from 13.6M available) of real registered
+    business websites, no label column, safely all-benign by construction
+
+One candidate source (`Phishing Website Detection Dataset/`, 6.5M headerless plaintext URLs) was
+investigated and deliberately **excluded**: sampling its "malign" file found 14,641 lines referencing
+amazon.com/google.com/wikipedia.org/microsoft.com plus adult-content URLs in both classes — strong
+evidence it's a mislabeled adult-content classifier, not a phishing/malware corpus.
+
+</details>
 
 **Pipeline:** lexical + host + content-keyword + structural + statistical features (`features.py`),
 plus a char n-gram TF-IDF block (100 features, fit on train only), fed through Random-Forest
@@ -68,6 +110,61 @@ feature-importance selection (top-30 engineered features), capped/targeted SMOTE
 oversampled to 1.2M, not full parity with benign — full parity at this scale would need ~40M+ mostly
 synthetic rows), `sample_weight`-balanced soft-voting ensemble (Random Forest + XGBoost + Logistic
 Regression + Naive Bayes).
+
+<details>
+<summary><strong>Full engineered feature list, 45 features (click to expand)</strong></summary>
+
+All computed directly from the URL string (`extract_features_row()` in `features.py`) — no live
+page fetch or network call, so this block is cheap enough to run inline at full dataset scale
+(unlike the WHOIS/ASN block below).
+
+**Lexical (11):** `url_length`, `hostname_length`, `path_length`, `digit_ratio`, `uppercase_ratio`,
+`ip_in_url_flag`, and 8 special-character counts (`count_at`, `count_qmark`, `count_hyphen`,
+`count_eq`, `count_dot`, `count_slash`, `count_pct`, `count_amp`, `count_colon`) — 9 counts total.
+No `https_flag`: `normalize_url()` strips any scheme before feature extraction (see below), so
+scheme presence isn't observable and would otherwise be a constant, uninformative column.
+
+**Host-based (10):** `subdomain_count`, `domain_length`, `tld_length`, `suspicious_tld_flag` (checked
+against a 26-entry list of TLDs commonly abused by cheap/free registrars — `.tk`, `.ml`, `.ga`,
+`.cf`, `.xyz`, `.top`, `.click`, etc.), `hyphen_in_domain_flag`, `digit_in_domain_flag`,
+`domain_entropy` (Shannon entropy of the registered domain), `subdomain_length`,
+`domain_token_count`, `brand_in_domain_flag` / `brand_in_subdomain_flag` (checked against a
+12-brand keyword list: paypal, amazon, apple, google, microsoft, facebook, netflix, bank,
+instagram, whatsapp, outlook, icloud).
+
+**Content-keyword (4):** `phish_keyword_count` (login/signin/verify/secure/confirm/banking/
+password/etc., 13 keywords), `brand_keyword_count`, `action_keyword_count` (download/install/
+click/free/gift/bonus/win), `sensitive_keyword_count` (ssn/creditcard/cvv/otp/pin/wallet) — all
+computed on the URL string itself, no page content is fetched.
+
+**Structural (7):** `path_depth`, `param_count`, `has_fragment_flag`, `double_slash_in_path_flag`,
+`query_length`, `path_entropy`, `query_entropy`.
+
+**Statistical (8):** `url_entropy`, `compression_ratio` (zlib-compressed length ÷ raw length —
+low-entropy/repetitive URLs compress more), `char_diversity`, `token_count`, `avg_token_length`,
+`max_token_length`, `unique_token_ratio`, `special_char_ratio` (URL split on `/-_.?=&%@:`
+separators for the token-level measures).
+
+**Char n-gram TF-IDF block (100 features, separate from the 45 above):** char-level 2-3-grams,
+`TfidfVectorizer(analyzer="char", ngram_range=(2,3), max_features=100)`, fit on the train split
+only (never the test split, to avoid leakage) via `build_ngram_features()`.
+
+Of these 45 engineered features, only the **top 30 by Random-Forest importance** are kept for the
+final model (`TOP_K = 30` in the training scripts) — ranked using a shallow (`max_depth=20`),
+100-tree RF on a 2M-row subsample, not the full training set (see
+[OOM crash history](#oom-crash-history-url-module-training), fix #4, for why).
+
+**Supplementary, NOT trained-model features — live lookups only:**
+- **WHOIS** (`whois_features.py`, 5 features): `whois_available`, `domain_age_days`,
+  `registration_length_days`, `recent_domain_flag` (registered <90 days ago),
+  `whois_private_flag` (registrant identity redacted/private).
+- **ASN / IP-prefix** (`asn_features.py`, 5 features): `asn_available`, `asn` (numeric Autonomous
+  System Number), `bgp_prefix_length`, `registry` (which RIR allocated the block — arin/ripencc/
+  apnic/lacnic/afrinic), `asn_country_code`, plus `resolved_ip` for display. Two-step lookup: DNS
+  A-record resolution, then IP→ASN mapping via Team Cymru's free bulk-whois service
+  (`whois.cymru.com:43`) — no API key required.
+
+</details>
 
 **Status: retraining in progress on Kaggle** (see below) with a corrected pipeline. The last
 completed run (84.8% accuracy, on an earlier/smaller version of the dataset, before four rounds of
