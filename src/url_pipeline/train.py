@@ -151,8 +151,17 @@ def main():
     # train_static_baseline.py's RF fit twice at a smaller row count (587k)
     # than even this pre-SMOTE selector sees. Same fix applied here
     # preemptively rather than waiting to hit it again.
-    rf_selector = RandomForestClassifier(n_estimators=200, random_state=args.random_state, n_jobs=1)
-    rf_selector.fit(X_train_static, y_train)
+    # Also subsample + cap depth: unconstrained-depth RF fit on the FULL
+    # 16.7M+-row train split OOM-killed the Kaggle kernel twice (see
+    # kaggle_kernel_train_url.py's matching comment) -- a shallow forest
+    # on a 2M-row subsample gives an equally reliable importance ranking.
+    rng = np.random.RandomState(args.random_state)
+    sample_size = min(2_000_000, len(X_train_static))
+    sample_idx = rng.choice(len(X_train_static), size=sample_size, replace=False)
+    rf_selector = RandomForestClassifier(
+        n_estimators=100, max_depth=20, random_state=args.random_state, n_jobs=1
+    )
+    rf_selector.fit(X_train_static.iloc[sample_idx], y_train.iloc[sample_idx])
     importances = pd.Series(rf_selector.feature_importances_, index=X_train_static.columns)
     top_k_cols = importances.sort_values(ascending=False).head(args.top_k).index.tolist()
     log(f"Top-{args.top_k} engineered features selected:\n{importances.sort_values(ascending=False).head(args.top_k)}")
@@ -246,7 +255,13 @@ def main():
     # SMOTE-balanced pool (all 4 classes resampled up to the majority
     # class's count -- several million rows), where the crash risk is even
     # higher than the pre-SMOTE selector's.
-    rf = RandomForestClassifier(n_estimators=300, random_state=args.random_state, n_jobs=1)
+    # max_depth/max_samples: unconstrained-depth RF fit on ~18.8M SMOTE-
+    # balanced rows OOM-killed the Kaggle kernel (see kaggle_kernel_train_
+    # url.py's matching comment for the crash history and reasoning).
+    rf = RandomForestClassifier(
+        n_estimators=300, max_depth=30, max_samples=0.3,
+        random_state=args.random_state, n_jobs=1,
+    )
     xgb = XGBClassifier(
         n_estimators=400, max_depth=8, learning_rate=0.08, random_state=args.random_state,
         n_jobs=6, eval_metric="mlogloss", tree_method="hist", device=xgb_device,

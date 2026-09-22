@@ -351,9 +351,31 @@ def main():
     X_train_static = build_static_features(train_urls)
     log(f"Train static features done in {time.time() - t0:.1f}s. Shape: {X_train_static.shape}")
 
-    log("Ranking engineered features by Random Forest importance (on train static features only) ...")
-    rf_selector = RandomForestClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=1)
-    rf_selector.fit(X_train_static, y_train)
+    # OOM history (4th crash, both accounts): the previous three fixes got
+    # past dataset load, train/test split, AND static feature extraction
+    # (confirmed by the log reaching "Train static features done" both
+    # times) -- but died immediately on rf_selector.fit(), an UNCONSTRAINED-
+    # DEPTH RandomForest with 200 trees fit on the full 16.7M-row training
+    # split. Unconstrained trees at that scale grow extremely large (this
+    # project's own docs elsewhere note ~53-56k leaves/tree for a similarly
+    # unconstrained 300-tree RF), and RandomForestClassifier keeps every
+    # fitted tree in memory afterward, not just one at a time. This
+    # selector only needs a feature-importance RANKING (which 45 of the
+    # engineered features matter most), not a production-quality model --
+    # a shallow forest on a modest random subsample gives an equally
+    # reliable ranking at a small fraction of the memory/time cost.
+    log("Ranking engineered features by Random Forest importance (on a subsample, shallow trees) ...")
+    rng = np.random.RandomState(RANDOM_STATE)
+    sample_size = min(2_000_000, len(X_train_static))
+    sample_idx = rng.choice(len(X_train_static), size=sample_size, replace=False)
+    X_selector_sample = X_train_static.iloc[sample_idx]
+    y_selector_sample = y_train.iloc[sample_idx]
+    rf_selector = RandomForestClassifier(
+        n_estimators=100, max_depth=20, random_state=RANDOM_STATE, n_jobs=1
+    )
+    rf_selector.fit(X_selector_sample, y_selector_sample)
+    del X_selector_sample, y_selector_sample
+    gc.collect()
     importances = pd.Series(rf_selector.feature_importances_, index=X_train_static.columns)
     top_k_cols = importances.sort_values(ascending=False).head(TOP_K).index.tolist()
     log(f"Top-{TOP_K} engineered features selected:\n{importances.sort_values(ascending=False).head(TOP_K)}")
@@ -439,7 +461,22 @@ def main():
 
     xgb_device = detect_xgb_device()
     log(f"Training Voting Classifier (RF + XGBoost[{xgb_device}] + LR + NB) ...")
-    rf = RandomForestClassifier(n_estimators=300, random_state=RANDOM_STATE, n_jobs=1)
+    # max_depth/max_samples added after the rf_selector crash above proved
+    # unconstrained-depth RF trees are what's OOM-killing this pipeline at
+    # ~17-19M-row scale, not (only) the surrounding data-copy overhead
+    # fixed earlier. This RF fits on the SMOTE-balanced set (~18.8M rows:
+    # raw benign+phishing, capped defacement/malware) -- even larger than
+    # the 16.7M-row rf_selector fit that just crashed both accounts after
+    # ~7h each. max_depth=30 and max_samples=0.3 (each tree bootstraps
+    # ~30% of rows) bound both the per-tree node count and the per-tree
+    # training-sample size, which is what unconstrained depth blows up
+    # uncontrollably at this scale. 300 trees kept (vs. fewer/shallower)
+    # to preserve as much ensemble diversity/accuracy as this constraint
+    # budget allows -- tree COUNT costs much less memory than tree DEPTH.
+    rf = RandomForestClassifier(
+        n_estimators=300, max_depth=30, max_samples=0.3,
+        random_state=RANDOM_STATE, n_jobs=1,
+    )
     xgb = XGBClassifier(
         n_estimators=400, max_depth=8, learning_rate=0.08, random_state=RANDOM_STATE,
         n_jobs=-1, eval_metric="mlogloss", tree_method="hist", device=xgb_device,
