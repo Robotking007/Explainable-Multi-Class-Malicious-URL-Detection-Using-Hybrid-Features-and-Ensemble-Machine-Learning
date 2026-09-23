@@ -13,7 +13,8 @@ beyond wiring its existing DOM hooks up to real fetch() calls.
 Endpoints:
   GET  /                      serves frontend/code.html (the dashboard)
   GET  /api/health            liveness + which models loaded
-  POST /api/url/predict       {url} -> Module B prediction + SHAP (src/url_pipeline/explain.py)
+  POST /api/url/predict       {url} -> Module B prediction + SHAP, plus supplementary live
+                               WHOIS + ASN/IP-prefix host-intelligence lookups (src/url_pipeline/explain.py)
   POST /api/url/escalate      {url} -> Module C dynamic/sandbox analysis (src/url_pipeline/dynamic_escalation.py)
   GET  /api/malware/sample    ?task=binary|family&row_index=<int> -> Module A prediction + SHAP on one
                                real CIC-MalMem-2022 row (src/malware_pipeline/explain.py)
@@ -58,18 +59,23 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _warm_model_cache():
-    # Building the URL branch's SHAP TreeExplainer over a 300-tree Random
-    # Forest takes tens of seconds. Doing that here, once, at process
-    # startup means the first real request isn't the one that pays for it
-    # (previously it was, and looked indistinguishable from a hung server).
-    print("[startup] Pre-loading models and SHAP explainers (this can take a minute)...")
-    load_url_artifacts()
-    load_malware_artifacts()
-    print("[startup] Model cache warm. Ready to serve.")
+    print("[startup] Pre-loading Deep Learning model (HybridURLNet) and explainers...")
+    try:
+        from url_pipeline.explain_dl import load_dl_artifacts
+        load_dl_artifacts()
+        print("[startup] HybridURLNet DL model warm in <1s.")
+    except Exception as e:
+        print(f"[startup] Warning: DL model warm deferred: {e}")
+    try:
+        load_malware_artifacts()
+    except Exception as e:
+        print(f"[startup] Malware model warm deferred: {e}")
+    print("[startup] Model cache ready to serve.")
 
 
 class URLRequest(BaseModel):
     url: str
+    model_type: Optional[str] = "auto"  # "auto", "dl", or "ensemble"
 
 
 class ChatRequest(BaseModel):
@@ -90,6 +96,8 @@ def index():
 def health():
     models_present = {
         "url_voting_classifier": (ROOT / "models" / "url_voting_classifier.joblib").exists(),
+        "url_dl_model": (ROOT / "models" / "url_dl_model.pt").exists(),
+        "url_gnn_model": (ROOT / "models" / "url_gnn_model.pt").exists(),
         "malware_binary_rf": (ROOT / "models" / "malware_dynamic_rf_binary_benign_vs_malware.joblib").exists(),
         "malware_family_rf": (ROOT / "models" / "malware_dynamic_rf_multiclass_family.joblib").exists(),
     }
@@ -100,10 +108,59 @@ def health():
 def url_predict(req: URLRequest):
     if not req.url or not req.url.strip():
         raise HTTPException(400, "url must not be empty")
+    cleaned_url = req.url.strip()
+    mtype = (req.model_type or "auto").lower()
+
+    if mtype in ("gnn", "graph"):
+        try:
+            from url_pipeline.explain_gnn import predict_url_gnn
+            return predict_url_gnn(cleaned_url)
+        except Exception as e:
+            raise HTTPException(500, f"GNN prediction failed: {e}")
+    elif mtype in ("dl", "deep_learning"):
+        try:
+            from url_pipeline.explain_dl import predict_url_dl
+            return predict_url_dl(cleaned_url)
+        except Exception as e:
+            raise HTTPException(500, f"DL prediction failed: {e}")
+    elif mtype in ("ensemble", "classical", "rf"):
+        try:
+            return predict_url(cleaned_url)
+        except Exception as e:
+            raise HTTPException(500, f"Ensemble prediction failed: {e}")
+    else:  # auto: prefer DL if present, else fallback
+        dl_exists = (ROOT / "models" / "url_dl_model.pt").exists()
+        if dl_exists:
+            try:
+                from url_pipeline.explain_dl import predict_url_dl
+                return predict_url_dl(cleaned_url)
+            except Exception:
+                return predict_url(cleaned_url)
+        return predict_url(cleaned_url)
+
+
+@app.post("/api/url/predict-dl")
+def url_predict_dl_endpoint(req: URLRequest):
+    """Direct endpoint strictly invoking the Deep Learning (HybridURLNet) pipeline."""
+    if not req.url or not req.url.strip():
+        raise HTTPException(400, "url must not be empty")
     try:
-        return predict_url(req.url.strip())
+        from url_pipeline.explain_dl import predict_url_dl
+        return predict_url_dl(req.url.strip())
     except Exception as e:
-        raise HTTPException(500, f"prediction failed: {e}")
+        raise HTTPException(500, f"Deep Learning prediction failed: {e}")
+
+
+@app.post("/api/url/predict-gnn")
+def url_predict_gnn_endpoint(req: URLRequest):
+    """Direct endpoint strictly invoking the Graph Neural Network (URLInfraGNN) pipeline."""
+    if not req.url or not req.url.strip():
+        raise HTTPException(400, "url must not be empty")
+    try:
+        from url_pipeline.explain_gnn import predict_url_gnn
+        return predict_url_gnn(req.url.strip())
+    except Exception as e:
+        raise HTTPException(500, f"Graph Neural Network prediction failed: {e}")
 
 
 @app.post("/api/url/escalate")
@@ -146,14 +203,18 @@ def metrics():
     retrained)."""
     report_dir = ROOT / "reports"
     url_metrics = _read_json(report_dir / "url_module_b_metrics.json")
+    url_dl_metrics = _read_json(report_dir / "url_dl_metrics.json")
     malware_dynamic = _read_json(report_dir / "malware_module_a_dynamic_baseline_metrics.json")
     malware_static = _read_json(report_dir / "malware_module_a_static_baseline_metrics.json")
     whois_ablation = _read_json(report_dir / "url_whois_ablation_metrics.json")
 
     result = {
-        "url_module_b": None, "malware_module_a_dynamic": None,
+        "url_module_b": None, "url_dl": None, "malware_module_a_dynamic": None,
         "malware_module_a_static": None, "whois_ablation": None,
     }
+
+    if url_dl_metrics:
+        result["url_dl"] = url_dl_metrics
 
     if url_metrics:
         result["url_module_b"] = {

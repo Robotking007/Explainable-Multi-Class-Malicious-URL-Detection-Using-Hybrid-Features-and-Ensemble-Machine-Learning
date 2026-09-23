@@ -36,7 +36,7 @@ def main():
     req.language = "python"
     req.kernel_type = "script"
     req.is_private = True
-    req.enable_gpu = True
+    req.enable_gpu = False
     req.enable_internet = True
     req.dataset_data_sources = [DATASET_SOURCE]
     req.competition_data_sources = []

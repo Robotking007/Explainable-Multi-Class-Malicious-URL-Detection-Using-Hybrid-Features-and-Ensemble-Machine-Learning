@@ -112,7 +112,7 @@ tailwind.config = { darkMode: "class", theme: { extend: {
     <div class="flex items-center gap-space-sm">
       <span class="material-symbols-outlined text-primary">travel_explore</span>
       <span class="font-headline text-lg">URL Scanner</span>
-      <span class="text-[11px] text-on-surface-variant">-- Module B (static features + Voting Classifier) with SHAP explanation</span>
+      <span class="text-[11px] text-on-surface-variant">-- Module B (HybridURLNet Deep Neural Network) with Neural Gradient Attribution</span>
     </div>
     <div class="flex flex-wrap items-center gap-space-xs">
       <span class="text-[11px] text-on-surface-variant font-label">Demo samples (illustrative only, not live predictions):</span>
@@ -126,6 +126,15 @@ tailwind.config = { darkMode: "class", theme: { extend: {
         <span class="absolute left-3.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-on-surface-variant text-[20px]">link</span>
         <input class="w-full pl-11 pr-4 py-3 rounded-lg bg-surface-container text-on-surface outline-none focus:bg-surface-container-high shadow-inner" id="target-input-field" placeholder="Enter a URL to scan..." type="text" value="http://paypal-secure-login.tk/verify/account"/>
       </div>
+      <label class="w-full sm:w-auto flex flex-col gap-1 text-[10px] uppercase tracking-wider text-on-surface-variant font-label">
+        Model
+        <select id="url-model-select" class="w-full sm:w-[170px] px-3 py-3 rounded-lg bg-surface-container text-on-surface outline-none focus:bg-surface-container-high">
+          <option value="auto">Auto (recommended)</option>
+          <option value="dl">Deep Learning</option>
+          <option value="gnn">Graph Neural Network</option>
+          <option value="ensemble">Classical Ensemble</option>
+        </select>
+      </label>
       <button class="w-full sm:w-auto px-space-xl py-3 rounded-lg bg-primary-container hover:bg-secondary-container text-on-primary-container font-label uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(6,182,212,0.35)]" id="btn-execute-scan">
         <span class="material-symbols-outlined text-[20px]">psychology</span><span>Execute Deep Scan</span>
       </button>
@@ -151,6 +160,10 @@ tailwind.config = { darkMode: "class", theme: { extend: {
             <span class="text-[10px] uppercase text-on-surface-variant font-label">Confidence</span>
             <span class="text-2xl font-headline font-semibold text-primary" id="predicted-confidence-val">--</span>
           </div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] text-on-surface-variant">
+          <span>Inference pipeline</span>
+          <strong class="text-primary font-label" id="prediction-model-name">--</strong>
         </div>
         <div class="flex flex-col gap-space-sm">
           <span class="text-[10px] uppercase text-on-surface-variant font-label">Class Probabilities</span>
@@ -198,6 +211,38 @@ tailwind.config = { darkMode: "class", theme: { extend: {
           <span class="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">smart_toy</span>
           <p class="text-[12px] text-on-surface-variant leading-relaxed" id="attribution-summary-text">No scan run yet.</p>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Host Intelligence: live WHOIS + ASN/IP-prefix lookups for the last
+       URL scan. Supplementary context only -- neither signal is part of
+       the trained voting classifier's feature set (both are live,
+       per-domain network lookups, infeasible at the 20M+-row training
+       scale), so this never affects the prediction/confidence/SHAP panel
+       above it. Hidden until the first real URL (Module B) scan runs. -->
+  <section class="rounded-xl bg-surface-container-low border border-surface-container-highest p-space-lg flex flex-col gap-space-md hidden" id="host-intel-section">
+    <div class="flex items-center gap-space-sm">
+      <span class="material-symbols-outlined text-primary">travel_explore</span>
+      <div class="flex flex-col leading-tight">
+        <span class="font-headline text-lg">Host Intelligence</span>
+        <span class="text-[11px] text-on-surface-variant">Live WHOIS + ASN/IP-prefix lookups -- supplementary context, not used by the model itself</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-space-md">
+      <div class="flex flex-col gap-1.5 p-space-md rounded-lg bg-surface-container">
+        <span class="text-[10px] uppercase text-on-surface-variant font-label">WHOIS (domain registration)</span>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Domain age</span><span id="whois-age">--</span></div>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Registration length</span><span id="whois-reg-length">--</span></div>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Recently registered</span><span id="whois-recent">--</span></div>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Privacy-protected</span><span id="whois-private">--</span></div>
+      </div>
+      <div class="flex flex-col gap-1.5 p-space-md rounded-lg bg-surface-container">
+        <span class="text-[10px] uppercase text-on-surface-variant font-label">Hosting / ASN</span>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Resolved IP</span><span id="asn-ip">--</span></div>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">ASN</span><span id="asn-number">--</span></div>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">BGP prefix length</span><span id="asn-prefix">--</span></div>
+        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Registry / country</span><span id="asn-registry">--</span></div>
       </div>
     </div>
   </section>
@@ -326,6 +371,7 @@ tailwind.config = { darkMode: "class", theme: { extend: {
   const $ = (id) => document.getElementById(id);
 
   const inputField = $('target-input-field');
+  const modelSelect = $('url-model-select');
   const btnScan = $('btn-execute-scan');
   const predictedClassName = $('predicted-class-name');
   const predictedConfidence = $('predicted-confidence-val');
@@ -337,8 +383,12 @@ tailwind.config = { darkMode: "class", theme: { extend: {
   const explainModeSwitch = $('explain-mode-switch');
   const shapFx = $('shap-output-fx');
   const shapPush = $('shap-net-push');
+  const predictionModelName = $('prediction-model-name');
   const cliTelemetry = $('cli-telemetry-container');
   const historyBody = $('history-table-body');
+  const hostIntelSection = $('host-intel-section');
+  const whoisAge = $('whois-age'), whoisRegLength = $('whois-reg-length'), whoisRecent = $('whois-recent'), whoisPrivate = $('whois-private');
+  const asnIp = $('asn-ip'), asnNumber = $('asn-number'), asnPrefix = $('asn-prefix'), asnRegistry = $('asn-registry');
 
   let currentMode = 'URL';
   let lastPrediction = null;
@@ -424,16 +474,42 @@ tailwind.config = { darkMode: "class", theme: { extend: {
 
   function toBars(topFeatures) {
     return (topFeatures || []).map(f => {
-      const pos = f.shap_value > 0;
+      const value = f.shap_value ?? f.attention_weight ?? 0;
+      const name = f.feature || f.node || 'Unknown feature';
+      const pos = value > 0;
       return {
-        name: f.feature,
-        phi: (pos ? '+' : '') + f.shap_value.toFixed(3),
-        fill: Math.min(100, Math.abs(f.shap_value) * 400).toFixed(0) + '%',
+        name,
+        phi: (pos ? '+' : '') + value.toFixed(3),
+        fill: Math.min(100, Math.abs(value) * 400).toFixed(0) + '%',
         color: pos ? 'bg-error' : 'bg-tertiary',
         textCol: pos ? 'text-error' : 'text-tertiary',
-        meta: 'val=' + f.raw_value,
+        meta: f.raw_value !== undefined ? 'val=' + f.raw_value : (f.node_type || 'attention'),
       };
     });
+  }
+
+  function renderHostIntel(result) {
+    const whois = result.whois_info, asn = result.asn_info;
+    if (!whois && !asn) { hostIntelSection.classList.add('hidden'); return; }
+    hostIntelSection.classList.remove('hidden');
+
+    if (whois && whois.whois_available) {
+      whoisAge.textContent = `${whois.domain_age_days.toLocaleString()} days`;
+      whoisRegLength.textContent = `${whois.registration_length_days.toLocaleString()} days`;
+      whoisRecent.textContent = whois.recent_domain_flag ? 'Yes' : 'No';
+      whoisPrivate.textContent = whois.whois_private_flag ? 'Yes' : 'No';
+    } else {
+      whoisAge.textContent = whoisRegLength.textContent = whoisRecent.textContent = whoisPrivate.textContent = 'Unavailable';
+    }
+
+    if (asn && asn.asn_available) {
+      asnIp.textContent = asn.resolved_ip || '--';
+      asnNumber.textContent = `AS${asn.asn}`;
+      asnPrefix.textContent = `/${asn.bgp_prefix_length}`;
+      asnRegistry.textContent = `${(asn.registry || '--').toUpperCase()} / ${asn.asn_country_code || '--'}`;
+    } else {
+      asnIp.textContent = asnNumber.textContent = asnPrefix.textContent = asnRegistry.textContent = 'Unavailable';
+    }
   }
 
   function renderRealPrediction(result) {
@@ -444,6 +520,7 @@ tailwind.config = { darkMode: "class", theme: { extend: {
     inputField.value = result.url;
     predictedClassName.textContent = disp.label;
     predictedConfidence.textContent = fmtPct(result.confidence);
+    predictionModelName.textContent = modelLabel(result);
     threatBadge.className = `px-space-sm py-0.5 rounded text-[11px] font-label flex items-center gap-1.5 ${disp.badge}`;
     threatBadge.innerHTML = `<span class="h-2 w-2 rounded-full ${disp.dot}"></span>${disp.label}`;
 
@@ -453,19 +530,34 @@ tailwind.config = { darkMode: "class", theme: { extend: {
     valDeface.textContent = fmtPct(probs.defacement); barDeface.style.width = fmtPct(probs.defacement);
 
     shapFx.textContent = result.confidence.toFixed(3);
-    shapPush.textContent = `Net SHAP push: ${result.net_push >= 0 ? '+' : ''}${result.net_push.toFixed(3)} (${result.explanation_model || 'surrogate model'})`;
-    renderBars(toBars(result.top_features));
+    const explanationItems = result.top_features || result.graph_attributions || [];
+    shapPush.textContent = result.net_push !== undefined
+      ? `Net SHAP push: ${result.net_push >= 0 ? '+' : ''}${result.net_push.toFixed(3)} (${result.explanation_model || 'surrogate model'})`
+      : `${result.model_architecture || 'Graph attention'} attribution weights`;
+    renderBars(toBars(explanationItems));
+    renderHostIntel(result);
 
-    const topNames = (result.top_features || []).slice(0, 3).map(f => f.feature).join(', ');
+    const topNames = explanationItems.slice(0, 3).map(f => f.feature || f.node).join(', ');
     summaryText.textContent = `Predicted '${result.predicted_class}' at ${fmtPct(result.confidence)} confidence. Top SHAP-attributed features: ${topNames || 'none'}.`;
 
     logCli(`Module B: ${result.url} -> ${result.predicted_class} (${fmtPct(result.confidence)})`, '+', 'text-primary');
-    addHistoryRow('URL (Module B)', result.url, result.predicted_class, result.confidence);
+    addHistoryRow(`URL (Module B) - ${modelLabel(result)}`, result.url, result.predicted_class, result.confidence);
+  }
+
+  function modelLabel(result) {
+    const model = result.model_type || result.model || result.model_architecture || result.explanation_model || modelSelect.value;
+    return ({
+      auto: 'Auto-selected model',
+      dl: 'HybridURLNet deep learning',
+      gnn: 'URLInfraGNN graph model',
+      ensemble: 'Classical voting ensemble',
+    })[model] || model;
   }
 
   async function runRealScan(url) {
     const res = await fetch(`${API_BASE}/api/url/predict`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url })
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url, model_type: modelSelect.value })
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -500,6 +592,7 @@ tailwind.config = { darkMode: "class", theme: { extend: {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const result = await res.json();
     renderBars(toBars(result.top_features));
+    hostIntelSection.classList.add('hidden');
     shapFx.textContent = result.confidence.toFixed(3);
     shapPush.textContent = `Predicted: ${result.predicted_class} (true label: ${result.true_label}) -- row ${result.row_index}/${result.dataset_size}`;
     summaryText.textContent = `Module A (CIC-MalMem-2022, dynamic memory forensics), real held-out sample #${result.row_index}: predicted '${result.predicted_class}' (true label '${result.true_label}') at ${fmtPct(result.confidence)} confidence.`;
@@ -516,6 +609,7 @@ tailwind.config = { darkMode: "class", theme: { extend: {
     }
     const result = await res.json();
     renderBars(toBars(result.top_features));
+    hostIntelSection.classList.add('hidden');
     shapFx.textContent = result.confidence.toFixed(3);
     shapPush.textContent = `Predicted: ${result.predicted_class} (true label: ${result.true_label}) -- row ${result.row_index}/${result.dataset_size} -- ${result.explanation_model}`;
     summaryText.textContent = `Module A' (${result.source}), real sample #${result.row_index}: predicted '${result.predicted_class}' (true label '${result.true_label}') at ${fmtPct(result.confidence)} confidence.`;

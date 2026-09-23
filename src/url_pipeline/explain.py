@@ -27,6 +27,8 @@ import shap
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from url_pipeline.features import extract_features_row, normalize_url  # noqa: E402
+from url_pipeline.whois_features import get_whois_features_for_url  # noqa: E402
+from url_pipeline.asn_features import get_asn_features_for_url  # noqa: E402
 from model_registry import ensure_model  # noqa: E402
 
 MODEL_DIR = ROOT / "models"
@@ -118,6 +120,23 @@ def predict_url(url: str, top_n: int = 8) -> dict:
         for feat, val in contrib.items()
     ]
 
+    # WHOIS/ASN are live, single-domain lookups (~0.1-4s each) supplementary
+    # to the model's own prediction -- NOT part of the trained feature set
+    # (both are documented, deliberate scope exclusions from the 20M+-row
+    # training pipeline; see whois_features.py/asn_features.py). Shown
+    # alongside the prediction/explanation purely as extra context for the
+    # analyst, not something the model's confidence/SHAP values reflect.
+    # Best-effort: a network hiccup here must never fail the prediction
+    # itself, which is why both are wrapped and default to "unavailable".
+    try:
+        whois_info = get_whois_features_for_url(url)
+    except Exception:
+        whois_info = None
+    try:
+        asn_info = get_asn_features_for_url(url)
+    except Exception:
+        asn_info = None
+
     return {
         "url": url,
         "predicted_class": pred_class,
@@ -127,6 +146,8 @@ def predict_url(url: str, top_n: int = 8) -> dict:
         "net_push": float(sum(f["shap_value"] for f in top_features)),
         "top_features": top_features,
         "explanation_model": explanation_model_note,
+        "whois_info": whois_info,
+        "asn_info": asn_info,
     }
 
 

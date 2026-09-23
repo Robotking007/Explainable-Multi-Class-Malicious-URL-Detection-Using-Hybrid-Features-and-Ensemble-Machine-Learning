@@ -60,12 +60,15 @@ IP_RE = re.compile(
 SPECIAL_CHARS = ["@", "?", "-", "=", ".", "/", "%", "&", ":"]
 
 
+from collections import Counter
+import math
+
 def _shannon_entropy(s: str) -> float:
     if not s:
         return 0.0
-    counts = pd.Series(list(s)).value_counts()
-    probs = counts / len(s)
-    return float(-(probs * np.log2(probs)).sum())
+    n = len(s)
+    counts = Counter(s)
+    return float(-sum((c / n) * math.log2(c / n) for c in counts.values()))
 
 
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")

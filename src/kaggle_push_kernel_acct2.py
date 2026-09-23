@@ -19,7 +19,7 @@ TOKEN_PATH = Path.home() / ".kaggle" / "access_token_2"
 KERNEL_SLUG = "siddhantudavant/cyberxai-url-training"
 KERNEL_ID = 135204067
 DATASET_SOURCE = "siddhantudavant/cyberxai-combined-urls"
-SCRIPT_PATH = ROOT / "src" / "kaggle_kernel_train_url.py"
+SCRIPT_PATH = ROOT / "src" / "kaggle_kernel_train_url_dl.py"
 
 
 def main():
@@ -37,7 +37,7 @@ def main():
     if KERNEL_ID:
         req.id = KERNEL_ID
     req.slug = KERNEL_SLUG
-    req.new_title = "CyberXAI URL Module B Training (acct2)"
+    req.new_title = "CyberXAI URL Module B Deep Learning Training (acct2)"
     req.text = code
     req.language = "python"
     req.kernel_type = "script"

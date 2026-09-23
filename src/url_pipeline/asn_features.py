@@ -136,15 +136,18 @@ def cymru_bulk_lookup(ips: list[str], timeout: float = 10.0) -> dict[str, dict]:
 @lru_cache(maxsize=4096)
 def get_asn_features(registered_domain: str, timeout: float = 3.0) -> dict:
     """Live DNS + ASN lookup for one registered domain. Cached per-process
-    by domain. Returns ASN_DEFAULTS on any resolution/lookup failure."""
+    by domain. Returns ASN_DEFAULTS (plus resolved_ip="") on any
+    resolution/lookup failure. The resolved IP is included alongside the
+    ASN_DEFAULTS keys purely for display (e.g. the frontend's Host
+    Intelligence panel) -- it's not one of the trained model's features."""
     ip = resolve_ip(registered_domain, timeout=timeout)
     if ip is None:
-        return dict(ASN_DEFAULTS)
+        return {**ASN_DEFAULTS, "resolved_ip": ""}
     result = cymru_bulk_lookup([ip], timeout=timeout + 5.0)
     feats = result.get(ip)
     if feats is None:
-        return dict(ASN_DEFAULTS)
-    return feats
+        return {**ASN_DEFAULTS, "resolved_ip": ip}
+    return {**feats, "resolved_ip": ip}
 
 
 def get_asn_features_for_url(url: str, timeout: float = 3.0) -> dict:

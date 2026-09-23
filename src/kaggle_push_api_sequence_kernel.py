@@ -24,11 +24,6 @@ def main():
     from kagglehub.config import set_kaggle_api_token
     set_kaggle_api_token(token)
 
-    import kagglehub
-    print("Uploading MalAPI2019 dataset...")
-    kagglehub.dataset_upload(DATASET_HANDLE, str(DATA_STAGE_DIR), version_notes="MalAPI2019 API call sequences")
-    print(f"Uploaded: https://www.kaggle.com/datasets/{DATASET_HANDLE}")
-
     from kagglehub.clients import build_kaggle_client
     from kagglesdk.kernels.types.kernels_api_service import ApiSaveKernelRequest
 
