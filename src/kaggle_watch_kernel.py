@@ -25,7 +25,7 @@ USER_NAME = sys.argv[3] if len(sys.argv) > 3 else "siddudavant"
 TOKEN_FILE_NAME = sys.argv[4] if len(sys.argv) > 4 else "access_token"
 TOKEN_PATH = Path.home() / ".kaggle" / TOKEN_FILE_NAME
 OUT_DIR = ROOT / "models" / OUT_SUBDIR
-POLL_SECONDS = 60
+POLL_SECONDS = 20
 
 
 def log(msg: str) -> None:
