@@ -45,6 +45,13 @@ upload_map = {
     # URL Fast SHAP Surrogate
     ROOT / "models" / "url_shap_surrogate_rf.joblib": "url_shap_surrogate_rf.joblib",
     
+    # URL Combined + WHOIS Soft-Voting Ensemble (Module B Joblib)
+    ROOT / "models" / "url_voting_classifier.joblib": "url_voting_classifier.joblib",
+    ROOT / "models" / "url_model.joblib": "url_model.joblib",
+    ROOT / "models" / "url_scaler.joblib": "url_scaler.joblib",
+    ROOT / "models" / "url_label_encoder.joblib": "url_label_encoder.joblib",
+    ROOT / "models" / "url_selected_features.json": "url_selected_features.json",
+
     # Module Evaluation Metrics
     ROOT / "models" / "from_kaggle_api_seq" / "malware_module_a_api_sequence_metrics.json": "malware_module_a_api_sequence_metrics.json",
     ROOT / "models" / "from_kaggle_dynamic" / "malware_module_a_dynamic_baseline_metrics.json": "malware_module_a_dynamic_baseline_metrics.json",
