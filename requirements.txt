@@ -13,3 +13,5 @@ python-whois
 joblib
 huggingface_hub
 playwright
+kagglehub
+torch
