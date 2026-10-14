@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #070a13;
+    --bg-card: #0d1322;
+    --bg-surface: #121a2f;
+    --border-color: rgba(56, 189, 248, 0.12);
+  }
+
+  body {
+    @apply bg-[#070a13] text-slate-100 antialiased font-sans min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200 overflow-x-hidden;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #090e1c;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #38bdf8;
+  }
+}
+
+@layer components {
+  .soc-card {
+    @apply bg-[#0d1322]/80 backdrop-blur-md border border-cyan-500/10 rounded-xl transition-all duration-300;
+  }
+  .soc-card-hover {
+    @apply hover:border-cyan-500/30 hover:shadow-glow-cyan;
+  }
+  .soc-input {
+    @apply bg-[#080d19] border border-slate-700/60 rounded-lg px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 transition-all;
+  }
+  .soc-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-semibold shadow-glow-cyan transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .soc-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700/60 transition-all duration-200 active:scale-[0.98] disabled:opacity-50;
+  }
+  .soc-badge-cyan {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20;
+  }
+  .soc-badge-danger {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/25;
+  }
+  .soc-badge-warning {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/25;
+  }
+  .soc-badge-success {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/25;
+  }
+  .soc-badge-violet {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/25;
+  }
+}
+
+/* React Flow styling overrides for SOC theme */
+.react-flow__renderer {
+  background-color: #080d19 !important;
+}
+.react-flow__controls {
+  background: #0d1322 !important;
+  border: 1px solid rgba(56, 189, 248, 0.2) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: #0d1322 !important;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.1) !important;
+  fill: #94a3b8 !important;
+}
+.react-flow__controls-button:hover {
+  background: #18233d !important;
+  fill: #38bdf8 !important;
+}
