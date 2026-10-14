@@ -39,7 +39,21 @@ def main():
     from kagglehub.clients import build_kaggle_client
     from kagglesdk.kernels.types.kernels_api_service import ApiSaveKernelRequest
 
+    # Load HF_TOKEN from .env to inject into the kernel
+    hf_token = ""
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("HF_TOKEN="):
+                hf_token = line.split("=", 1)[1].strip()
+
     code = SCRIPT_PATH.read_text(encoding="utf-8")
+    if hf_token:
+        code = code.replace('HF_TOKEN = ""', f'HF_TOKEN = "{hf_token}"')
+        print(f"Injected HF_TOKEN (length: {len(hf_token)}) into kernel code for direct Hugging Face upload.")
+
+    # Master dataset is siddudavant/cyberxai-combined-urls (public)
+    dataset_source = "siddudavant/cyberxai-combined-urls"
 
     req = ApiSaveKernelRequest()
     req.slug = KERNEL_SLUG
@@ -50,7 +64,7 @@ def main():
     req.is_private = True
     req.enable_gpu = True
     req.enable_internet = True
-    req.dataset_data_sources = [DATASET_SOURCE]
+    req.dataset_data_sources = [dataset_source]
     req.competition_data_sources = []
     req.kernel_data_sources = []
     req.model_data_sources = []

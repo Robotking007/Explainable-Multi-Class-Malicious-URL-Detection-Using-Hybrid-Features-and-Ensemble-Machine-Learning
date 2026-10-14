@@ -36,9 +36,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 
-# Kaggle paths
+# Kaggle paths & HF config
 IN_DIR = Path("/kaggle/input")
 OUT_DIR = Path("/kaggle/working")
+HF_TOKEN = ""  # Populated dynamically by kernel push script or env
+HF_REPO_ID = "siddudavant/cyberxai-models"
 
 SUSPICIOUS_TLDS = {
     "zip", "review", "country", "kim", "cricket", "science", "work",
@@ -204,14 +206,46 @@ def main():
 
     if str(data_file).endswith(".parquet"):
         df = pd.read_parquet(data_file)
+        col_map = {c.lower(): c for c in df.columns}
+        url_col = col_map.get("url", "url")
+        label_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
+        df = df.dropna(subset=[url_col, label_col])
     else:
-        df = pd.read_csv(data_file, nrows=150000)
+        log("Streaming dataset from CSV in chunks with stratified balance across all 27M rows...")
+        chunks = []
+        # Retain 100% of minority attack classes (malware & defacement),
+        # and sample ~500k benign + ~500k phishing uniformly across the full alphabet.
+        target_per_maj = 500_000
+        total_rows_approx = 27_022_952
+        maj_sample_rate = target_per_maj / max(total_rows_approx / 2, 1)
 
-    col_map = {c.lower(): c for c in df.columns}
-    url_col = col_map.get("url", "url")
-    label_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
-    df = df.dropna(subset=[url_col, label_col])
-    log(f"Total rows: {len(df):,}")
+        chunksize = 1_000_000
+        for i, chunk in enumerate(pd.read_csv(data_file, chunksize=chunksize)):
+            col_map = {c.lower(): c for c in chunk.columns}
+            u_col = col_map.get("url", "url")
+            l_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
+            chunk = chunk.dropna(subset=[u_col, l_col])
+
+            # Separate minority vs majority classes
+            is_minority = chunk[l_col].str.lower().isin(["defacement", "malware"])
+            minority_df = chunk[is_minority]
+            majority_df = chunk[~is_minority].sample(frac=maj_sample_rate, random_state=42 + i)
+
+            sampled_chunk = pd.concat([minority_df, majority_df])
+            chunks.append(sampled_chunk[[u_col, l_col]])
+            if (i + 1) % 5 == 0 or (i + 1) >= 27:
+                log(f"  Chunk {i+1}: running sampled total = {sum(len(c) for c in chunks):,} rows")
+
+        df = pd.concat(chunks, ignore_index=True)
+        del chunks
+        gc.collect()
+
+        col_map = {c.lower(): c for c in df.columns}
+        url_col = col_map.get("url", "url")
+        label_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
+
+    log(f"Total balanced dataset rows: {len(df):,}")
+    log(f"Class distribution:\n{df[label_col].value_counts()}")
 
     log("Extracting features in parallel across CPU cores...")
     urls = df[url_col].tolist()
@@ -333,6 +367,33 @@ def main():
         json.dump(rep, f, indent=2)
 
     log("Training complete. Artifacts saved successfully to /kaggle/working/")
+
+    # Direct push to Hugging Face Hub from Kaggle
+    hf_tok = HF_TOKEN or os.environ.get("HF_TOKEN", "")
+    if hf_tok:
+        log(f"Uploading trained model artifacts directly to Hugging Face Hub ({HF_REPO_ID})...")
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi(token=hf_tok)
+            for artifact_name in [
+                "url_dl_model.pt",
+                "url_dl_scaler.joblib",
+                "url_dl_label_encoder.joblib",
+                "url_dl_metrics.json",
+            ]:
+                fpath = OUT_DIR / artifact_name
+                if fpath.exists():
+                    api.upload_file(
+                        path_or_fileobj=str(fpath),
+                        path_in_repo=artifact_name,
+                        repo_id=HF_REPO_ID,
+                        repo_type="model",
+                        token=hf_tok,
+                    )
+                    log(f"Uploaded {artifact_name} to Hugging Face: {HF_REPO_ID}")
+            log("All artifacts successfully published to Hugging Face Hub!")
+        except Exception as e:
+            log(f"Hugging Face Hub direct upload warning: {e}")
 
 
 if __name__ == "__main__":

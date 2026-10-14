@@ -38,7 +38,7 @@ def main():
 
     kagglehub.dataset_upload(
         DATASET_HANDLE, str(STAGE_DIR),
-        version_notes="2.5M-row merged URL dataset for CyberXAI Module B",
+        version_notes="Consolidated, cleaned, deduplicated, sorted 27.02M-row master URL dataset for CyberXAI Module B",
     )
     print(f"Uploaded to https://www.kaggle.com/datasets/{DATASET_HANDLE}")
 
