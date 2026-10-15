@@ -166,7 +166,7 @@ export const ExplainableAI = () => {
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 30, left: 140, bottom: 5 }}>
-                  <XAxis type="number" stroke="#64748b" fontSize={11} domain={[-0.2, 0.5]} />
+                  <XAxis type="number" stroke="#64748b" fontSize={11} domain={[-0.5, 0.5]} />
                   <YAxis type="category" dataKey="name" stroke="#94a3b8" fontSize={11} width={130} />
                   <Tooltip
                     contentStyle={{
