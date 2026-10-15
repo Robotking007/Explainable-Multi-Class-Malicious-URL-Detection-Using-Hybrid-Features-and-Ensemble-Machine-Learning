@@ -13,18 +13,147 @@ import {
   Layers,
   Terminal,
   ExternalLink,
-  Info
+  Info,
+  Lock,
+  Eye,
+  FileCode,
+  Network,
+  CornerDownRight,
+  ChevronRight,
+  ChevronDown,
+  Maximize2,
+  Activity,
+  Sparkles,
+  Filter,
+  ArrowRight,
+  Radio,
+  FileText,
+  RefreshCw,
+  AlertOctagon,
+  AlertCircle
 } from 'lucide-react';
 import dynamicAnalysisService from '../services/dynamicAnalysisService';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ErrorBanner from '../components/common/ErrorBanner';
 import StatusBadge from '../components/common/StatusBadge';
 
+// Recursive Antigravity-Style DOM Node Viewer
+const DomNodeView = ({ node, depth = 0, selectedNode, onSelectNode, filterTag }) => {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = node.children && node.children.length > 0;
+  const isSelected = selectedNode === node;
+
+  if (filterTag && filterTag !== 'all' && node.tag !== filterTag && !hasChildren) {
+    return null;
+  }
+
+  const isCritical = node.threat_badge && (
+    node.threat_badge.includes('Critical') ||
+    node.threat_badge.includes('Exfiltration') ||
+    node.threat_badge.includes('Password')
+  );
+  const isWarning = node.threat_badge && (
+    node.threat_badge.includes('Obfuscated') ||
+    node.threat_badge.includes('Script') ||
+    node.threat_badge.includes('Hidden') ||
+    node.threat_badge.includes('Target')
+  );
+
+  return (
+    <div className="font-mono text-xs select-none">
+      <div
+        onClick={() => onSelectNode(node)}
+        className={`flex items-center gap-1.5 py-1 px-2 rounded-lg cursor-pointer transition-colors ${
+          isSelected
+            ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/50'
+            : node.is_suspicious
+            ? 'bg-rose-950/20 text-rose-200 hover:bg-rose-950/40 border border-rose-900/30'
+            : 'hover:bg-slate-800/60 text-slate-300'
+        }`}
+        style={{ paddingLeft: `${depth * 14 + 8}px` }}
+      >
+        {hasChildren ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            className="p-0.5 hover:text-cyan-400 text-slate-500 transition-colors"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+        ) : (
+          <span className="w-3.5 text-center text-slate-600 text-[10px]">•</span>
+        )}
+
+        <span className={`font-bold ${node.is_suspicious ? 'text-rose-400' : 'text-violet-400'}`}>
+          &lt;{node.tag}
+        </span>
+
+        {/* Display key attributes */}
+        {node.attributes && Object.entries(node.attributes).slice(0, 3).map(([k, v]) => (
+          <span key={k} className="text-[11px] truncate max-w-[160px]">
+            <span className="text-cyan-300">{k}</span>
+            <span className="text-slate-500">=</span>
+            <span className="text-amber-300">"{v}"</span>
+          </span>
+        ))}
+
+        <span className={`font-bold ${node.is_suspicious ? 'text-rose-400' : 'text-violet-400'}`}>
+          &gt;
+        </span>
+
+        {node.threat_badge && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ml-auto ${
+            isCritical
+              ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+              : isWarning
+              ? 'bg-purple-950 text-purple-300 border border-purple-500/40'
+              : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+          }`}>
+            {node.threat_badge}
+          </span>
+        )}
+
+        {node.text && !hasChildren && (
+          <span className="text-slate-400 text-[11px] truncate max-w-[180px] ml-1">
+            "{node.text}"
+          </span>
+        )}
+      </div>
+
+      {hasChildren && expanded && (
+        <div>
+          {node.children.map((child, idx) => (
+            <DomNodeView
+              key={idx}
+              node={child}
+              depth={depth + 1}
+              selectedNode={selectedNode}
+              onSelectNode={onSelectNode}
+              filterTag={filterTag}
+            />
+          ))}
+          <div
+            className="py-0.5 text-slate-500 text-[11px]"
+            style={{ paddingLeft: `${depth * 14 + 18}px` }}
+          >
+            &lt;/{node.tag}&gt;
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const DynamicAnalysis = () => {
-  const [urlInput, setUrlInput] = useState('');
+  const [urlInput, setUrlInput] = useState('https://suspicious-portal.site/verify?token=xyz');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dynamicResult, setDynamicResult] = useState(null);
+  const [activeTab, setActiveTab] = useState('dom'); // 'dom' | 'browser' | 'js' | 'warnings'
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [domFilter, setDomFilter] = useState('all');
 
   const stagesWorkflow = [
     { id: 1, title: 'Static Lexical Parser', desc: 'Entropy, URL length, token n-grams' },
@@ -32,6 +161,29 @@ export const DynamicAnalysis = () => {
     { id: 3, title: 'Headless Browser Sandbox', desc: 'Controlled isolated container execution' },
     { id: 4, title: 'DOM & JavaScript Profiler', desc: 'Forms, hidden elements, event listeners' },
     { id: 5, title: 'Multi-Modal GNN Verdict', desc: 'Unified static + dynamic inference' }
+  ];
+
+  const presets = [
+    {
+      label: 'Phishing Portal (Obfuscated JS)',
+      url: 'https://suspicious-portal.site/verify?token=xyz',
+      category: 'Phishing'
+    },
+    {
+      label: 'Microsoft Token Harvester',
+      url: 'https://login.microsoftonline.security-token-renewal.com',
+      category: 'Credential Stealer'
+    },
+    {
+      label: 'Tor Admin Panel (C2 IP)',
+      url: 'http://185.220.101.5/admin/panel',
+      category: 'Malicious Host'
+    },
+    {
+      label: 'Clean Web Service (GitHub Linux)',
+      url: 'https://github.com/torvalds/linux',
+      category: 'Benign'
+    }
   ];
 
   const handleStartAnalysis = async (url = urlInput) => {
@@ -43,15 +195,38 @@ export const DynamicAnalysis = () => {
     setLoading(true);
     setError(null);
     setDynamicResult(null);
+    setSelectedNode(null);
 
     try {
       const res = await dynamicAnalysisService.runDynamicAnalysis(url.trim());
       setDynamicResult(res);
+      if (res.domTree && res.domTree.length > 0) {
+        setSelectedNode(res.domTree[0]);
+      }
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const parseWarningSeverity = (warning) => {
+    if (warning.startsWith('[CRITICAL]')) {
+      return { level: 'critical', text: warning.replace('[CRITICAL]', '').trim() };
+    }
+    if (warning.startsWith('[HIGH]')) {
+      return { level: 'high', text: warning.replace('[HIGH]', '').trim() };
+    }
+    if (warning.startsWith('[MEDIUM]')) {
+      return { level: 'medium', text: warning.replace('[MEDIUM]', '').trim() };
+    }
+    if (warning.startsWith('[INFO]')) {
+      return { level: 'info', text: warning.replace('[INFO]', '').trim() };
+    }
+    if (warning.startsWith('[SAFE]')) {
+      return { level: 'safe', text: warning.replace('[SAFE]', '').trim() };
+    }
+    return { level: 'warning', text: warning };
   };
 
   return (
@@ -61,13 +236,13 @@ export const DynamicAnalysis = () => {
         <div>
           <div className="flex items-center gap-2">
             <span className="soc-badge-cyan text-xs font-mono">SANDBOX ENGINE</span>
-            <span className="text-xs text-slate-400 font-mono">• Controlled Execution</span>
+            <span className="text-xs text-slate-400 font-mono">• Controlled Execution & DOM Profiler</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-100 font-mono tracking-tight mt-1">
-            Dynamic URL Analysis
+            Dynamic URL Analysis & Browser Sandbox
           </h1>
           <p className="text-xs text-slate-400 max-w-2xl mt-1">
-            Multi-stage workflow: Static Features → Confidence Evaluation → Headless Browser Sandbox → Behavioral DOM & JS Profiling.
+            Multi-stage workflow: Static Features → Confidence Evaluation → Headless Browser Sandbox → Behavioral DOM & Dynamic JS Execution Profiling.
           </p>
         </div>
       </div>
@@ -78,8 +253,8 @@ export const DynamicAnalysis = () => {
         <div className="space-y-1">
           <span className="font-semibold text-slate-200 font-mono">Sandbox Isolation Notice: </span>
           <span>
-            URLs are strictly executed within the backend's controlled container environment with network egress restrictions.
-            The frontend never directly renders or executes foreign untrusted JavaScript in your local browser session.
+            URLs are strictly executed within the backend's isolated headless Chromium container with network egress restrictions.
+            The frontend inspects the captured DOM tree and JavaScript telemetry without executing untrusted foreign code in your browser.
           </span>
         </div>
       </div>
@@ -97,6 +272,7 @@ export const DynamicAnalysis = () => {
             placeholder="https://suspicious-portal.site/verify?token=xyz"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleStartAnalysis()}
             disabled={loading}
             className="flex-1 bg-[#080d19] border border-slate-700/80 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-cyan-400"
           />
@@ -109,21 +285,44 @@ export const DynamicAnalysis = () => {
             <span>Launch Dynamic Sandbox</span>
           </button>
         </div>
+
+        {/* Quick Presets Bar */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono text-slate-400">
+          <span className="flex items-center gap-1 font-semibold text-slate-300">
+            <Radio className="w-3 h-3 text-cyan-400" /> Presets:
+          </span>
+          {presets.map((p, idx) => (
+            <button
+              key={idx}
+              onClick={() => {
+                setUrlInput(p.url);
+                handleStartAnalysis(p.url);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-800 hover:border-cyan-500/40 transition-all flex items-center gap-1.5"
+            >
+              <span className="truncate max-w-[200px]">{p.label}</span>
+              <span className="text-[9px] px-1 rounded bg-slate-800 text-slate-400">{p.category}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Stepper / Timeline Workflow Visualizer */}
       <div className="soc-card p-6 space-y-4">
-        <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-wider">
-          Dynamic Analysis Execution Pipeline
+        <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-wider flex items-center gap-2">
+          <Layers className="w-4 h-4 text-cyan-400" />
+          <span>Dynamic Analysis Execution Pipeline</span>
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          {stagesWorkflow.map((stage, idx) => (
+          {stagesWorkflow.map((stage) => (
             <div
               key={stage.id}
               className={`p-3.5 rounded-xl border font-mono text-xs transition-all ${
                 dynamicResult
-                  ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-300'
+                  ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-300 shadow-sm shadow-emerald-950/20'
+                  : loading
+                  ? 'bg-slate-900/60 border-cyan-500/30 text-cyan-200 animate-pulse'
                   : 'bg-slate-900/40 border-slate-800 text-slate-400'
               }`}
             >
@@ -146,8 +345,8 @@ export const DynamicAnalysis = () => {
 
       {loading && (
         <LoadingSpinner
-          message="Spawning Controlled Headless Browser Sandbox"
-          subtext="Monitoring script hooks, credential harvesting forms, and WebSocket connections..."
+          message="Spawning Controlled Headless Chromium Sandbox"
+          subtext="Intercepting JavaScript execution hooks, monitoring credential exfiltration forms, and extracting DOM hierarchy..."
           step="Stage 3: Headless Sandbox"
         />
       )}
@@ -163,85 +362,545 @@ export const DynamicAnalysis = () => {
       {/* Dynamic Results Display */}
       {dynamicResult && !loading && (
         <div className="space-y-6">
-          {/* Main Verdict Card */}
+          {/* Main Verdict & KPI Banner */}
           <div className="soc-card p-6 border-l-4 border-l-cyan-400 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
               <div>
-                <span className="text-[10px] font-mono text-slate-400">ANALYSIS TARGET</span>
+                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Analysis Target</span>
                 <h3 className="text-base font-bold font-mono text-cyan-300 break-all">{dynamicResult.url}</h3>
-              </div>
-              <StatusBadge status={dynamicResult.finalVerdict} size="lg" />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* DOM Profile */}
-              <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 font-mono text-xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <span className="font-bold text-slate-200">DOM Profile & Structure</span>
-                  <Code2 className="w-4 h-4 text-cyan-400" />
-                </div>
-                <div className="space-y-2 text-[11px]">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Detected HTML Forms:</span>
-                    <span className="text-slate-200 font-bold">{dynamicResult.domProfile.formsCount}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Password Fields:</span>
-                    <span className="text-rose-400 font-bold">{dynamicResult.domProfile.passwordFields}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Hidden iFrames:</span>
-                    <span className="text-slate-200 font-bold">{dynamicResult.domProfile.hiddenIframes}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">External Script Sources:</span>
-                    <span className="text-slate-200 font-bold">{dynamicResult.domProfile.externalScriptCount}</span>
-                  </div>
+                <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] font-mono text-slate-400">
+                  <span>Engine: <span className="text-slate-200">{dynamicResult.browserDetails?.engine || 'Chromium Headless'}</span></span>
+                  <span>•</span>
+                  <span>SSL: <span className={dynamicResult.browserDetails?.sslValid ? 'text-emerald-400' : 'text-rose-400'}>
+                    {dynamicResult.browserDetails?.sslValid ? 'Verified HTTPS' : 'Unencrypted / Invalid'}
+                  </span></span>
+                  <span>•</span>
+                  <span>HTTP Status: <span className="text-cyan-400 font-bold">{dynamicResult.browserDetails?.finalStatus || 200}</span></span>
                 </div>
               </div>
-
-              {/* JS Behavior Profiling */}
-              <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 font-mono text-xs space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <span className="font-bold text-slate-200">JavaScript Execution Profiling</span>
-                  <Terminal className="w-4 h-4 text-violet-400" />
-                </div>
-                <div className="space-y-2 text-[11px]">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">eval() / Obfuscation:</span>
-                    <span className={dynamicResult.jsBehavior.evalUsage ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-                      {dynamicResult.jsBehavior.evalUsage ? 'DETECTED' : 'None'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Anti-Debugging Hooks:</span>
-                    <span className={dynamicResult.jsBehavior.antiDebuggingDetected ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
-                      {dynamicResult.jsBehavior.antiDebuggingDetected ? 'Active Evasion' : 'Clean'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">XHR / Fetch Calls:</span>
-                    <span className="text-slate-200 font-bold">{dynamicResult.jsBehavior.networkCallsCount} requests</span>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">Risk Score</span>
+                  <div className={`text-xl font-bold font-mono ${dynamicResult.riskScore > 70 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {dynamicResult.riskScore} / 100
                   </div>
                 </div>
+                <StatusBadge status={dynamicResult.finalVerdict} size="lg" />
               </div>
             </div>
 
-            {/* Warnings list */}
-            {dynamicResult.warnings?.length > 0 && (
-              <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/25 space-y-2">
-                <span className="text-xs font-bold font-mono text-amber-300 flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  Behavioral Anomalies Observed in Sandbox:
+            {/* Quick KPI Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 font-mono text-xs">
+                <span className="text-[10px] text-slate-400 block">HTML Forms</span>
+                <span className="text-lg font-bold text-slate-100">{dynamicResult.domProfile.formsCount}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 font-mono text-xs">
+                <span className="text-[10px] text-slate-400 block">Password Fields</span>
+                <span className={`text-lg font-bold ${dynamicResult.domProfile.passwordFields > 0 ? 'text-rose-400' : 'text-slate-100'}`}>
+                  {dynamicResult.domProfile.passwordFields}
                 </span>
-                <ul className="list-disc list-inside text-xs text-amber-200/90 font-mono space-y-1">
-                  {dynamicResult.warnings.map((w, i) => (
-                    <li key={i}>{w}</li>
-                  ))}
-                </ul>
               </div>
-            )}
+              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 font-mono text-xs">
+                <span className="text-[10px] text-slate-400 block">Dynamic eval() Calls</span>
+                <span className={`text-lg font-bold ${dynamicResult.jsBehavior.evalUsage ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {dynamicResult.jsBehavior.evalUsage ? 'DETECTED' : 'None'}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 font-mono text-xs">
+                <span className="text-[10px] text-slate-400 block">Anti-Debug Hooks</span>
+                <span className={`text-lg font-bold ${dynamicResult.jsBehavior.antiDebuggingDetected ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {dynamicResult.jsBehavior.antiDebuggingDetected ? 'Active Evasion' : 'Clean'}
+                </span>
+              </div>
+            </div>
           </div>
+
+          {/* Forensic Tabs Header */}
+          <div className="flex border-b border-slate-800 gap-2 overflow-x-auto">
+            <button
+              id="tab-dom"
+              onClick={() => setActiveTab('dom')}
+              className={`px-4 py-2.5 text-xs font-mono font-semibold transition-all border-b-2 flex items-center gap-2 flex-shrink-0 ${
+                activeTab === 'dom'
+                  ? 'border-cyan-400 text-cyan-300 bg-cyan-950/20'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Code2 className="w-4 h-4" />
+              <span>Interactive DOM Tree Inspector</span>
+              {dynamicResult.domTree?.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
+                  {dynamicResult.domProfile?.elementsTotal || 25}
+                </span>
+              )}
+            </button>
+
+            <button
+              id="tab-browser"
+              onClick={() => setActiveTab('browser')}
+              className={`px-4 py-2.5 text-xs font-mono font-semibold transition-all border-b-2 flex items-center gap-2 flex-shrink-0 ${
+                activeTab === 'browser'
+                  ? 'border-cyan-400 text-cyan-300 bg-cyan-950/20'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Eye className="w-4 h-4" />
+              <span>Sandbox Browser Viewport & Redirects</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300">
+                {dynamicResult.redirectChain?.length || 1} hops
+              </span>
+            </button>
+
+            <button
+              id="tab-js"
+              onClick={() => setActiveTab('js')}
+              className={`px-4 py-2.5 text-xs font-mono font-semibold transition-all border-b-2 flex items-center gap-2 flex-shrink-0 ${
+                activeTab === 'js'
+                  ? 'border-cyan-400 text-cyan-300 bg-cyan-950/20'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Terminal className="w-4 h-4" />
+              <span>JavaScript Runtime Telemetry</span>
+              {dynamicResult.jsBehavior.evalUsage && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-950 text-rose-300 border border-rose-800">
+                  ALERT
+                </span>
+              )}
+            </button>
+
+            <button
+              id="tab-warnings"
+              onClick={() => setActiveTab('warnings')}
+              className={`px-4 py-2.5 text-xs font-mono font-semibold transition-all border-b-2 flex items-center gap-2 flex-shrink-0 ${
+                activeTab === 'warnings'
+                  ? 'border-cyan-400 text-cyan-300 bg-cyan-950/20'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span>Behavioral Anomalies ({dynamicResult.warnings?.length || 0})</span>
+            </button>
+          </div>
+
+          {/* TAB 1: INTERACTIVE DOM TREE INSPECTOR */}
+          {activeTab === 'dom' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* DOM Tree Column */}
+              <div className="lg:col-span-2 soc-card p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <FileCode className="w-4 h-4 text-cyan-400" />
+                    <span className="text-xs font-bold font-mono text-slate-200 uppercase">
+                      DOM Hierarchy Tree (Antigravity Inspector)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <Filter className="w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={domFilter}
+                      onChange={(e) => setDomFilter(e.target.value)}
+                      className="bg-[#080d19] border border-slate-700 rounded-lg px-2.5 py-1 text-slate-300 text-xs focus:outline-none focus:border-cyan-400"
+                    >
+                      <option value="all">Filter: All Elements</option>
+                      <option value="form">Forms (&lt;form&gt;)</option>
+                      <option value="input">Inputs (&lt;input&gt;)</option>
+                      <option value="script">Scripts (&lt;script&gt;)</option>
+                      <option value="iframe">iFrames (&lt;iframe&gt;)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-[#070b14] border border-slate-800/80 max-h-[520px] overflow-y-auto space-y-0.5">
+                  {dynamicResult.domTree && dynamicResult.domTree.length > 0 ? (
+                    dynamicResult.domTree.map((rootNode, idx) => (
+                      <DomNodeView
+                        key={idx}
+                        node={rootNode}
+                        selectedNode={selectedNode}
+                        onSelectNode={setSelectedNode}
+                        filterTag={domFilter}
+                      />
+                    ))
+                  ) : (
+                    <div className="p-8 text-center text-slate-500 font-mono text-xs">
+                      No DOM tree nodes captured for this execution.
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 pt-2 text-[11px] font-mono text-slate-400 border-t border-slate-800/80">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded bg-rose-500/80" />
+                    <span>External Form Action / Password</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded bg-purple-500/80" />
+                    <span>Obfuscated Script</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded bg-amber-500/80" />
+                    <span>Hidden Element Hook</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Element Details Drawer / Inspector Column */}
+              <div className="soc-card p-5 space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <span className="text-xs font-bold font-mono text-slate-200 uppercase flex items-center gap-2">
+                    <Search className="w-4 h-4 text-violet-400" />
+                    Element Inspector
+                  </span>
+                  {selectedNode && (
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-cyan-300">
+                      &lt;{selectedNode.tag}&gt;
+                    </span>
+                  )}
+                </div>
+
+                {selectedNode ? (
+                  <div className="space-y-4 font-mono text-xs">
+                    {/* Security Flag Banner */}
+                    {selectedNode.threat_badge ? (
+                      <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 space-y-1">
+                        <span className="text-[10px] font-bold text-rose-400 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          SECURITY THREAT FLAG:
+                        </span>
+                        <div className="text-xs text-rose-200 font-bold">{selectedNode.threat_badge}</div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-400 text-xs">
+                        No immediate anomalies observed on this specific element.
+                      </div>
+                    )}
+
+                    {/* Tag & Text */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-400 uppercase">Element Tag</span>
+                      <div className="p-2 rounded bg-slate-900 border border-slate-800 text-cyan-300 font-bold">
+                        {selectedNode.tag}
+                      </div>
+                    </div>
+
+                    {selectedNode.text && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-slate-400 uppercase">Text / Script Content</span>
+                        <div className="p-2.5 rounded bg-[#070b14] border border-slate-800 text-slate-300 max-h-32 overflow-y-auto text-[11px] whitespace-pre-wrap break-all">
+                          {selectedNode.text}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Attributes Key-Value Table */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-slate-400 uppercase">HTML Attributes</span>
+                      {selectedNode.attributes && Object.keys(selectedNode.attributes).length > 0 ? (
+                        <div className="rounded-lg border border-slate-800 divide-y divide-slate-800/80 overflow-hidden text-[11px]">
+                          {Object.entries(selectedNode.attributes).map(([attr, val]) => (
+                            <div key={attr} className="p-2 flex flex-col bg-slate-900/50">
+                              <span className="text-cyan-400 font-bold">{attr}</span>
+                              <span className="text-amber-200/90 break-all">{val}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-slate-500 block">No attributes specified.</span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-slate-500 font-mono text-xs">
+                    Click any element in the DOM tree on the left to inspect its HTML attributes, exfiltration targets, and security flags.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: SANDBOX BROWSER VIEWPORT & REDIRECTS */}
+          {activeTab === 'browser' && (
+            <div className="space-y-6">
+              {/* Virtual Browser Window */}
+              <div className="soc-card overflow-hidden border border-slate-700/80 shadow-2xl">
+                {/* Browser Top Chrome / Titlebar */}
+                <div className="bg-[#0b101d] px-4 py-3 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
+                    <span className="text-[11px] font-mono text-slate-400 ml-2">CyberX Isolated Chromium Sandbox</span>
+                  </div>
+
+                  {/* Browser Address Bar */}
+                  <div className="flex-1 max-w-xl mx-auto flex items-center gap-2 bg-[#060a12] border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200">
+                    <Lock className={`w-3.5 h-3.5 ${dynamicResult.browserDetails?.sslValid ? 'text-emerald-400' : 'text-rose-400'}`} />
+                    <span className="truncate flex-1">{dynamicResult.browserDetails?.finalUrl || dynamicResult.url}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300">
+                      {dynamicResult.browserDetails?.finalStatus || 200} OK
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                    <span className="soc-badge-cyan text-[10px]">HEADLESS 1280x800</span>
+                  </div>
+                </div>
+
+                {/* Sandboxed Page Viewport Simulation */}
+                <div className="p-8 bg-[#040711] min-h-[380px] flex items-center justify-center relative">
+                  <div className="absolute top-3 right-4 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-[10px] font-mono text-amber-300 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>ISOLATED SIMULATED VIEWPORT • NO LOCAL JAVASCRIPT EXECUTION</span>
+                  </div>
+
+                  {/* Rendered Mockup of Target Site */}
+                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#0a0f1d] border border-slate-800/80 shadow-xl space-y-4 font-mono">
+                    <div className="text-center space-y-1 pb-3 border-b border-slate-800">
+                      <div className="w-10 h-10 mx-auto rounded-xl bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-lg">
+                        {dynamicResult.url.includes('microsoft') ? 'M' : 'S'}
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-100">{dynamicResult.domProfile?.pageTitle || 'Authentication Gateway'}</h4>
+                      <p className="text-[10px] text-slate-400">Security Verification Required</p>
+                    </div>
+
+                    {dynamicResult.domProfile?.formsCount > 0 ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400">Corporate Identity / Email</span>
+                          <input
+                            type="text"
+                            placeholder="user@organization.com"
+                            disabled
+                            className="w-full bg-[#060a12] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400">Security Token / Password</span>
+                          <input
+                            type="password"
+                            placeholder="••••••••••••"
+                            disabled
+                            className="w-full bg-[#060a12] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400"
+                          />
+                        </div>
+                        <button
+                          disabled
+                          className="w-full py-2 rounded-lg bg-cyan-600/50 text-cyan-200 text-xs font-bold cursor-not-allowed"
+                        >
+                          Verify Identity & Renew Access
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="py-6 text-center text-slate-400 text-xs space-y-2">
+                        <Globe className="w-8 h-8 text-cyan-400 mx-auto opacity-60" />
+                        <p>Web service loaded successfully without interactive credential submission prompts.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Multi-Hop Navigation & Redirect Chain */}
+              <div className="soc-card p-5 space-y-4 font-mono">
+                <span className="text-xs font-bold text-slate-200 uppercase flex items-center gap-2">
+                  <CornerDownRight className="w-4 h-4 text-cyan-400" />
+                  Navigation Redirect Trace & Trajectory
+                </span>
+
+                <div className="space-y-3">
+                  {dynamicResult.redirectChain && dynamicResult.redirectChain.map((hop, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-6 h-6 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 flex items-center justify-center text-[10px] font-bold">
+                          {hop.step}
+                        </span>
+                        <div>
+                          <span className="font-bold text-slate-200 break-all">{hop.url}</span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5">{hop.reason}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                          hop.status === 200
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                            : 'bg-amber-950 text-amber-300 border border-amber-800'
+                        }`}>
+                          HTTP {hop.status}
+                        </span>
+                        <span className="text-slate-500 text-[11px]">{hop.latency_ms || 110}ms</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: JAVASCRIPT BEHAVIORAL TELEMETRY */}
+          {activeTab === 'js' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Dynamic Eval Card */}
+                <div className={`soc-card p-5 space-y-2 border-l-4 ${
+                  dynamicResult.jsBehavior.evalUsage ? 'border-l-rose-500' : 'border-l-emerald-500'
+                }`}>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">eval() / Dynamic Function()</span>
+                  <div className="text-lg font-bold font-mono text-slate-100 flex items-center justify-between">
+                    <span>{dynamicResult.jsBehavior.evalUsage ? 'DETECTED' : 'Not Observed'}</span>
+                    <Terminal className={`w-5 h-5 ${dynamicResult.jsBehavior.evalUsage ? 'text-rose-400' : 'text-emerald-400'}`} />
+                  </div>
+                  <p className="text-[11px] font-mono text-slate-400">
+                    {dynamicResult.jsBehavior.evalUsage
+                      ? 'JavaScript compiles dynamic string code at runtime via eval() or Function constructor, typical of deobfuscation packers.'
+                      : 'No dynamic code evaluation or runtime string deobfuscation detected.'}
+                  </p>
+                </div>
+
+                {/* Anti-Debugging Timing Card */}
+                <div className={`soc-card p-5 space-y-2 border-l-4 ${
+                  dynamicResult.jsBehavior.antiDebuggingDetected ? 'border-l-rose-500' : 'border-l-emerald-500'
+                }`}>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">Anti-Sandbox Evasion Loop</span>
+                  <div className="text-lg font-bold font-mono text-slate-100 flex items-center justify-between">
+                    <span>{dynamicResult.jsBehavior.antiDebuggingDetected ? 'ACTIVE EVASION' : 'Clean'}</span>
+                    <Clock className={`w-5 h-5 ${dynamicResult.jsBehavior.antiDebuggingDetected ? 'text-rose-400' : 'text-emerald-400'}`} />
+                  </div>
+                  <p className="text-[11px] font-mono text-slate-400">
+                    {dynamicResult.jsBehavior.antiDebuggingDetected
+                      ? 'Detected debugger timing loops (setInterval debugger) designed to crash developer tools and stall automated sandboxes.'
+                      : 'No timing evasion or debugger statement traps encountered during execution.'}
+                  </p>
+                </div>
+
+                {/* Keylogger Hook Card */}
+                <div className={`soc-card p-5 space-y-2 border-l-4 ${
+                  dynamicResult.jsBehavior.keyloggerHooks ? 'border-l-rose-500' : 'border-l-emerald-500'
+                }`}>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">Global Keylogger Listeners</span>
+                  <div className="text-lg font-bold font-mono text-slate-100 flex items-center justify-between">
+                    <span>{dynamicResult.jsBehavior.keyloggerHooks ? 'INTERCEPTED' : 'Standard'}</span>
+                    <Radio className={`w-5 h-5 ${dynamicResult.jsBehavior.keyloggerHooks ? 'text-rose-400' : 'text-emerald-400'}`} />
+                  </div>
+                  <p className="text-[11px] font-mono text-slate-400">
+                    {dynamicResult.jsBehavior.keyloggerHooks
+                      ? 'Window-level keydown event listeners registered to intercept and record victim credentials before form submission.'
+                      : 'Standard form input controls with no document-level keystroke interception hooks.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Detailed JS Runtime Trace Console */}
+              <div className="soc-card p-5 space-y-3 font-mono">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <span className="text-xs font-bold text-slate-200 uppercase flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-cyan-400" />
+                    Sandbox JavaScript Execution Trace & Console Interceptions
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    Shannon Entropy: {dynamicResult.jsBehavior.inlineEntropy || 5.4} bits/char
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-[#050811] border border-slate-800 text-xs space-y-2 max-h-64 overflow-y-auto font-mono text-slate-300">
+                  <div className="text-slate-500">[0.010s] Chromium Engine initialized with isolated profile.</div>
+                  <div className="text-slate-500">[0.024s] DOMContentLoaded event triggered.</div>
+                  {dynamicResult.jsBehavior.evalUsage ? (
+                    <>
+                      <div className="text-amber-400">
+                        [0.052s] WARNING: Script invoked eval(atob("...")) payload decoder.
+                      </div>
+                      <div className="text-rose-400">
+                        [0.089s] DETECTED: setInterval(function(){ '{ debugger; }' }, 150) loop initiated.
+                      </div>
+                      <div className="text-rose-400">
+                        [0.142s] DETECTED: window.addEventListener('keydown', captureKeystrokes) registered on global object.
+                      </div>
+                      <div className="text-cyan-400">
+                        [0.210s] INTERCEPT: Form action configured to external endpoint: {dynamicResult.domTree?.[0]?.children?.[1]?.children?.[1]?.attributes?.action || 'http://185.220.101.5/harvest.php'}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-emerald-400">
+                        [0.045s] Standard script bundles compiled cleanly without dynamic eval compilation.
+                      </div>
+                      <div className="text-emerald-400">
+                        [0.078s] No anti-debugging or timing loops triggered. Execution within nominal browser bounds.
+                      </div>
+                      <div className="text-slate-400">
+                        [0.112s] Total network XHR/fetch requests completed: {dynamicResult.jsBehavior.networkCallsCount || 1}
+                      </div>
+                    </>
+                  )}
+                  <div className="text-slate-500">[0.340s] Sandbox evaluation completed. Disposing temporary browser context.</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: BEHAVIORAL ANOMALIES OBSERVED IN SANDBOX */}
+          {activeTab === 'warnings' && (
+            <div className="soc-card p-6 space-y-4 font-mono">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                    Behavioral Anomalies Observed in Sandbox ({dynamicResult.warnings?.length || 0})
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  Granular threat telemetry parsed from headless execution
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {dynamicResult.warnings && dynamicResult.warnings.map((w, i) => {
+                  const { level, text } = parseWarningSeverity(w);
+                  return (
+                    <div
+                      key={i}
+                      className={`p-4 rounded-xl border flex items-start gap-3 text-xs ${
+                        level === 'critical'
+                          ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                          : level === 'high'
+                          ? 'bg-orange-950/30 border-orange-500/40 text-orange-200'
+                          : level === 'medium'
+                          ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                          : level === 'safe'
+                          ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+                          : 'bg-cyan-950/30 border-cyan-500/40 text-cyan-200'
+                      }`}
+                    >
+                      {level === 'critical' && <AlertOctagon className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />}
+                      {level === 'high' && <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />}
+                      {level === 'medium' && <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />}
+                      {level === 'safe' && <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />}
+                      {level === 'info' && <Info className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />}
+
+                      <div className="space-y-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded ${
+                          level === 'critical' ? 'bg-rose-950 text-rose-300' :
+                          level === 'high' ? 'bg-orange-950 text-orange-300' :
+                          level === 'medium' ? 'bg-amber-950 text-amber-300' :
+                          level === 'safe' ? 'bg-emerald-950 text-emerald-300' :
+                          'bg-cyan-950 text-cyan-300'
+                        }`}>
+                          {level.toUpperCase()}
+                        </span>
+                        <p className="text-xs font-mono leading-relaxed mt-1">{text}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

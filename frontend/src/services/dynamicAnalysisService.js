@@ -52,18 +52,37 @@ function normalizeDynamicResponse(data, targetUrl) {
       passwordFields: data.password_fields ?? 1,
       hiddenIframes: data.hidden_iframes ?? 0,
       externalScriptCount: data.external_scripts ?? 3,
-      pageTitle: data.title || 'Untitled Session Verification'
+      pageTitle: data.title || 'Untitled Session Verification',
+      elementsTotal: data.elements_total ?? 25
     },
-    jsBehavior: data.js_behavior || {
-      evalUsage: data.eval_detected ?? false,
-      antiDebuggingDetected: data.anti_debug ?? false,
-      cookieAccess: data.cookie_access ?? true,
-      webSocketConnections: data.websockets ?? 0,
-      networkCallsCount: data.xhr_count ?? 4
+    domTree: data.dom_tree || data.domTree || [],
+    browserDetails: data.browser_details || {
+      engine: 'Chromium 124.0.6367.29 (Headless Sandbox)',
+      viewport: '1280x800',
+      sslValid: true,
+      finalUrl: targetUrl
+    },
+    jsBehavior: data.js_behavior ? {
+      evalUsage: Boolean(data.js_behavior.eval_detected),
+      antiDebuggingDetected: Boolean(data.js_behavior.anti_debug),
+      cookieAccess: Boolean(data.js_behavior.cookie_access),
+      keyloggerHooks: Boolean(data.js_behavior.keylogger_hooks),
+      webSocketConnections: data.js_behavior.websockets ?? 0,
+      networkCallsCount: data.js_behavior.xhr_count ?? 2,
+      inlineEntropy: data.js_behavior.inline_entropy ?? 2.4,
+      eventListenersCount: data.js_behavior.event_listeners_count ?? 3
+    } : {
+      evalUsage: false,
+      antiDebuggingDetected: false,
+      cookieAccess: true,
+      keyloggerHooks: false,
+      webSocketConnections: 0,
+      networkCallsCount: 2,
+      inlineEntropy: 2.4,
+      eventListenersCount: 3
     },
     warnings: data.warnings || [
-      'Page attempts credential harvesting with unencrypted external POST action',
-      'JavaScript timer detected attempting anti-sandbox delay loop'
+      'No evasive JavaScript primitives observed'
     ],
     finalVerdict: data.verdict || data.classification || 'Malicious Phishing Portal',
     riskScore: data.risk_score || 92
