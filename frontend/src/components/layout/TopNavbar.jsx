@@ -97,6 +97,19 @@ export const TopNavbar = ({ setMobileOpen, onOpenNotifications }) => {
           </button>
         </div>
 
+        {/* Hugging Face Hub shortcut pill */}
+        <button
+          onClick={() => navigate('/settings')}
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-mono text-xs transition-all hover:scale-105"
+          title="Open Hugging Face Model Hub (siddudavant/cyberxai-models)"
+        >
+          <span className="text-xs">🤗</span>
+          <span className="text-[11px] font-semibold">HF Hub</span>
+          <span className="text-[9px] px-1.5 py-0.2 bg-amber-400/20 text-amber-200 rounded font-bold">
+            31
+          </span>
+        </button>
+
         {/* Notifications button */}
         <button
           onClick={onOpenNotifications}

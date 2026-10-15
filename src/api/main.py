@@ -68,6 +68,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _warm_model_cache():
+    import threading
     print("[startup] Pre-loading Deep Learning model (HybridURLNet) and explainers...")
     try:
         from url_pipeline.explain_dl import load_dl_artifacts
@@ -75,11 +76,23 @@ def _warm_model_cache():
         print("[startup] HybridURLNet DL model warm in <1s.")
     except Exception as e:
         print(f"[startup] Warning: DL model warm deferred: {e}")
-    try:
-        load_malware_artifacts()
-    except Exception as e:
-        print(f"[startup] Malware model warm deferred: {e}")
-    print("[startup] Model cache ready to serve.")
+
+    def _async_warm():
+        try:
+            from url_pipeline.explain_gnn import load_gnn_artifacts
+            load_gnn_artifacts()
+            print("[startup] URLInfraGNN warm.")
+        except Exception as e:
+            print(f"[startup] GNN warm deferred: {e}")
+        try:
+            load_malware_artifacts()
+            print("[startup] Malware memory model warm.")
+        except Exception as e:
+            print(f"[startup] Malware model warm deferred: {e}")
+
+    threading.Thread(target=_async_warm, daemon=True).start()
+    print("[startup] Model cache ready to serve immediately.")
+
 
 
 # ==========================================
@@ -1277,3 +1290,551 @@ def metrics():
             "whois_availability_rate": whois_ablation.get("whois_availability_rate"),
         }
     return result
+
+
+# ==========================================
+# HUGGING FACE MODEL REGISTRY & HUB
+# ==========================================
+
+HF_REPO_ID = "siddudavant/cyberxai-models"
+HF_REPO_URL = f"https://huggingface.co/{HF_REPO_ID}"
+
+HF_MODEL_CATALOG = [
+    # 1. Deep Learning (PyTorch)
+    {
+        "filename": "url_dl_model.pt",
+        "name": "HybridURLNet Neural Network",
+        "category": "Deep Learning",
+        "engine": "PyTorch",
+        "description": "HybridURLNet 1D-CNN + BiLSTM + Tabular Dense deep neural network for sub-second URL classification.",
+        "in_memory_target": "url_dl",
+    },
+    {
+        "filename": "url_dl_scaler.joblib",
+        "name": "HybridURLNet Feature Scaler",
+        "category": "Deep Learning",
+        "engine": "Scikit-Learn",
+        "description": "StandardScaler normalizer fitted on 45 hybrid URL tabular & WHOIS feature dimensions.",
+        "in_memory_target": "url_dl",
+    },
+    {
+        "filename": "url_dl_label_encoder.joblib",
+        "name": "HybridURLNet Class Encoder",
+        "category": "Deep Learning",
+        "engine": "Scikit-Learn",
+        "description": "LabelEncoder mapping numeric output classes (benign, defacement, malware, phishing).",
+        "in_memory_target": "url_dl",
+    },
+    {
+        "filename": "url_dl_metrics.json",
+        "name": "HybridURLNet Validation Metrics",
+        "category": "Deep Learning",
+        "engine": "Evaluation Metric",
+        "description": "Accuracy, Macro F1, Recall, and confusion matrix from Kaggle GPU training run.",
+        "in_memory_target": None,
+    },
+
+    # 2. Graph Neural Network (PyG)
+    {
+        "filename": "url_gnn_model.pt",
+        "name": "URLInfraGNN Architecture",
+        "category": "Graph Neural Network",
+        "engine": "PyTorch Geometric",
+        "description": "3-layer GATv2 Graph Attention Network trained on heterogeneous URL-Domain-IP-ASN infrastructure graphs.",
+        "in_memory_target": "url_gnn",
+    },
+    {
+        "filename": "url_gnn_scaler.joblib",
+        "name": "URLInfraGNN Node Scaler",
+        "category": "Graph Neural Network",
+        "engine": "Scikit-Learn",
+        "description": "StandardScaler for multi-modal star-ego graph node feature representations.",
+        "in_memory_target": "url_gnn",
+    },
+    {
+        "filename": "url_gnn_label_encoder.joblib",
+        "name": "URLInfraGNN Target Encoder",
+        "category": "Graph Neural Network",
+        "engine": "Scikit-Learn",
+        "description": "LabelEncoder for transductive graph node classification verdicts.",
+        "in_memory_target": "url_gnn",
+    },
+    {
+        "filename": "url_gnn_metrics.json",
+        "name": "URLInfraGNN Evaluation Metrics",
+        "category": "Graph Neural Network",
+        "engine": "Evaluation Metric",
+        "description": "Graph attention performance metrics, attention entropy, and validation accuracy.",
+        "in_memory_target": None,
+    },
+
+    # 3. URL Ensemble & TreeSHAP (Module B)
+    {
+        "filename": "url_voting_classifier.joblib",
+        "name": "URL Soft-Voting Ensemble",
+        "category": "URL Ensemble",
+        "engine": "Scikit-Learn Ensemble",
+        "description": "Weighted soft-voting ensemble combining LightGBM, XGBoost, CatBoost, and Random Forest.",
+        "in_memory_target": "url_voting",
+    },
+    {
+        "filename": "url_model.joblib",
+        "name": "Primary Random Forest Model",
+        "category": "URL Ensemble",
+        "engine": "Scikit-Learn",
+        "description": "Calibrated Random Forest base estimator trained on lexical & host URL features.",
+        "in_memory_target": "url_rf",
+    },
+    {
+        "filename": "url_scaler.joblib",
+        "name": "URL Ensemble Scaler",
+        "category": "URL Ensemble",
+        "engine": "Scikit-Learn",
+        "description": "Feature standardizer for tabular lexical feature extraction pipeline.",
+        "in_memory_target": "url_voting",
+    },
+    {
+        "filename": "url_label_encoder.joblib",
+        "name": "URL Ensemble Class Encoder",
+        "category": "URL Ensemble",
+        "engine": "Scikit-Learn",
+        "description": "Multi-class target label encoder for URL threat categories.",
+        "in_memory_target": "url_voting",
+    },
+    {
+        "filename": "url_ngram_vectorizer.joblib",
+        "name": "Character N-Gram Vectorizer",
+        "category": "URL Ensemble",
+        "engine": "Scikit-Learn",
+        "description": "3-5 character n-gram TF-IDF vectorizer capturing lexical obfuscation signatures.",
+        "in_memory_target": "url_voting",
+    },
+    {
+        "filename": "url_selected_features.json",
+        "name": "Selected Features Schema",
+        "category": "URL Ensemble",
+        "engine": "Schema",
+        "description": "Mutual information and importance-filtered top feature set schema.",
+        "in_memory_target": "url_voting",
+    },
+    {
+        "filename": "url_shap_surrogate_rf.joblib",
+        "name": "TreeSHAP Surrogate Tree",
+        "category": "Explainability (XAI)",
+        "engine": "SHAP TreeExplainer",
+        "description": "Surrogate tree used for sub-second TreeSHAP feature attribution calculations.",
+        "in_memory_target": "url_shap",
+    },
+    {
+        "filename": "url_module_b_metrics.json",
+        "name": "Module B URL Benchmark Metrics",
+        "category": "URL Ensemble",
+        "engine": "Evaluation Metric",
+        "description": "Module B accuracy, macro precision, recall, and ROC-AUC scores.",
+        "in_memory_target": None,
+    },
+
+    # 4. Malware Dynamic Analysis (CIC-MalMem-2022)
+    {
+        "filename": "malware_dynamic_rf_multiclass_family.joblib",
+        "name": "Dynamic Memory Family RF",
+        "category": "Malware Dynamic",
+        "engine": "Random Forest",
+        "description": "15-family malware classification model on volatile memory dumps (CIC-MalMem-2022).",
+        "in_memory_target": "malware_dynamic",
+    },
+    {
+        "filename": "malware_dynamic_rf_binary_benign_vs_malware.joblib",
+        "name": "Dynamic Memory Binary RF",
+        "category": "Malware Dynamic",
+        "engine": "Random Forest",
+        "description": "Binary malware detector (benign vs malicious) on volatile memory dumps.",
+        "in_memory_target": "malware_dynamic",
+    },
+    {
+        "filename": "malware_dynamic_xgb_multiclass_family.joblib",
+        "name": "Dynamic Memory Family XGBoost",
+        "category": "Malware Dynamic",
+        "engine": "XGBoost",
+        "description": "Gradient-boosted decision tree for 15-class malware family memory classification.",
+        "in_memory_target": None,
+    },
+    {
+        "filename": "malware_dynamic_xgb_binary_benign_vs_malware.joblib",
+        "name": "Dynamic Memory Binary XGBoost",
+        "category": "Malware Dynamic",
+        "engine": "XGBoost",
+        "description": "Gradient-boosted binary classifier for volatile memory dump triage.",
+        "in_memory_target": None,
+    },
+    {
+        "filename": "malware_dynamic_label_encoder_multiclass_family.joblib",
+        "name": "Dynamic Family Label Encoder",
+        "category": "Malware Dynamic",
+        "engine": "Scikit-Learn",
+        "description": "Label encoder for Spyware, Ransomware, Trojan, and Benign families.",
+        "in_memory_target": "malware_dynamic",
+    },
+    {
+        "filename": "malware_dynamic_label_encoder_binary_benign_vs_malware.joblib",
+        "name": "Dynamic Binary Label Encoder",
+        "category": "Malware Dynamic",
+        "engine": "Scikit-Learn",
+        "description": "Binary target label encoder (0: Benign, 1: Malware).",
+        "in_memory_target": "malware_dynamic",
+    },
+    {
+        "filename": "malware_module_a_dynamic_baseline_metrics.json",
+        "name": "Dynamic Baseline Evaluation Metrics",
+        "category": "Malware Dynamic",
+        "engine": "Evaluation Metric",
+        "description": "Dynamic memory baseline benchmark accuracy and ROC-AUC metrics.",
+        "in_memory_target": None,
+    },
+
+    # 5. Malware Static PE Analysis (BODMAS / EMBER)
+    {
+        "filename": "malware_static_rf.joblib",
+        "name": "Static PE Random Forest",
+        "category": "Malware Static",
+        "engine": "Random Forest",
+        "description": "Static PE header, import table, and byte-entropy detector trained on BODMAS & EMBER.",
+        "in_memory_target": "malware_static",
+    },
+    {
+        "filename": "malware_static_xgb.joblib",
+        "name": "Static PE XGBoost",
+        "category": "Malware Static",
+        "engine": "XGBoost",
+        "description": "Static PE structural feature classifier with fast tree inference.",
+        "in_memory_target": None,
+    },
+    {
+        "filename": "malware_module_a_static_baseline_metrics.json",
+        "name": "Static PE Benchmark Metrics",
+        "category": "Malware Static",
+        "engine": "Evaluation Metric",
+        "description": "Static PE internal holdout and external EMBER test metrics.",
+        "in_memory_target": None,
+    },
+
+    # 6. Malware API Sequence GNN & N-Grams (MalAPI2019)
+    {
+        "filename": "malware_api_sequence_rf.joblib",
+        "name": "API Sequence Random Forest",
+        "category": "Malware API Sequence",
+        "engine": "Random Forest",
+        "description": "Sequential Windows API call n-gram analyzer (MalAPI2019 dataset).",
+        "in_memory_target": "malware_api",
+    },
+    {
+        "filename": "malware_api_sequence_xgb.joblib",
+        "name": "API Sequence XGBoost",
+        "category": "Malware API Sequence",
+        "engine": "XGBoost",
+        "description": "Gradient-boosted API invocation sequence classifier.",
+        "in_memory_target": None,
+    },
+    {
+        "filename": "malware_api_sequence_label_encoder.joblib",
+        "name": "API Sequence Label Encoder",
+        "category": "Malware API Sequence",
+        "engine": "Scikit-Learn",
+        "description": "Label encoder for 8 malware families based on API call traces.",
+        "in_memory_target": "malware_api",
+    },
+    {
+        "filename": "malware_api_sequence_vectorizer.joblib",
+        "name": "API Sequence TF-IDF Vectorizer",
+        "category": "Malware API Sequence",
+        "engine": "Scikit-Learn",
+        "description": "Sequential API call n-gram TF-IDF vectorizer.",
+        "in_memory_target": "malware_api",
+    },
+    {
+        "filename": "malware_module_a_api_sequence_metrics.json",
+        "name": "API Sequence Benchmark Metrics",
+        "category": "Malware API Sequence",
+        "engine": "Evaluation Metric",
+        "description": "Accuracy and macro F1 metrics for sequential API call models.",
+        "in_memory_target": None,
+    },
+]
+
+
+def _format_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    elif num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    elif num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def _get_hf_token() -> Optional[str]:
+    import os
+    env_token = os.environ.get("HF_TOKEN")
+    if env_token:
+        return env_token
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("HF_TOKEN="):
+                return line.split("=", 1)[1].strip()
+    return None
+
+
+def _check_memory_caches() -> dict:
+    status = {}
+    try:
+        from url_pipeline.explain_dl import load_dl_artifacts
+        info = load_dl_artifacts.cache_info()
+        status["url_dl"] = info.currsize > 0
+    except Exception:
+        status["url_dl"] = False
+
+    try:
+        from url_pipeline.explain import load_artifacts as load_url_artifacts
+        info = load_url_artifacts.cache_info()
+        status["url_voting"] = info.currsize > 0
+        status["url_rf"] = info.currsize > 0
+        status["url_shap"] = info.currsize > 0
+    except Exception:
+        status["url_voting"] = False
+        status["url_rf"] = False
+        status["url_shap"] = False
+
+    try:
+        from malware_pipeline.explain import load_artifacts as load_malware_artifacts
+        info = load_malware_artifacts.cache_info()
+        status["malware_dynamic"] = info.currsize > 0
+    except Exception:
+        status["malware_dynamic"] = False
+
+    try:
+        from url_pipeline.explain_gnn import load_gnn_artifacts
+        info = load_gnn_artifacts.cache_info()
+        status["url_gnn"] = info.currsize > 0
+    except Exception:
+        status["url_gnn"] = False
+
+    status["malware_static"] = (ROOT / "models" / "malware_static_rf.joblib").exists()
+    status["malware_api"] = (ROOT / "models" / "malware_api_sequence_rf.joblib").exists()
+    return status
+
+
+@app.get("/api/models/hf-status")
+@app.get("/api/models/status")
+def hf_models_status():
+    """
+    Returns the real-time synchronization status of all 31 model checkpoints
+    against the Hugging Face Hub repository (siddudavant/cyberxai-models).
+    """
+    token = _get_hf_token()
+    models_dir = ROOT / "models"
+    mem_status = _check_memory_caches()
+
+    model_entries = []
+    total_local = 0
+    total_in_mem = 0
+    total_size_bytes = 0
+
+    for item in HF_MODEL_CATALOG:
+        fn = item["filename"]
+        local_p = models_dir / fn
+        cached = local_p.exists()
+        size_bytes = local_p.stat().st_size if cached else 0
+        total_size_bytes += size_bytes
+
+        if cached:
+            total_local += 1
+
+        target = item.get("in_memory_target")
+        is_in_mem = bool(cached and target and mem_status.get(target, False))
+        if is_in_mem:
+            total_in_mem += 1
+
+        model_entries.append({
+            "filename": fn,
+            "name": item["name"],
+            "category": item["category"],
+            "engine": item["engine"],
+            "description": item["description"],
+            "cached_locally": cached,
+            "in_memory": is_in_mem,
+            "size_bytes": size_bytes,
+            "size_human": _format_size(size_bytes) if cached else "Remote (HF Hub)",
+            "hf_url": f"{HF_REPO_URL}/blob/main/{fn}",
+            "local_path": str(local_p) if cached else None,
+        })
+
+    categories = list(dict.fromkeys(m["category"] for m in HF_MODEL_CATALOG))
+
+    return {
+        "status": "success",
+        "repo_id": HF_REPO_ID,
+        "author": "siddudavant",
+        "repo_url": HF_REPO_URL,
+        "token_configured": bool(token),
+        "total_remote_models": len(HF_MODEL_CATALOG),
+        "total_cached_locally": total_local,
+        "total_in_memory": total_in_mem,
+        "total_storage_size": _format_size(total_size_bytes),
+        "total_storage_bytes": total_size_bytes,
+        "categories": categories,
+        "models": model_entries,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+class LoadFromHfRequest(BaseModel):
+    models: Optional[List[str]] = None
+    force_download: Optional[bool] = False
+
+
+@app.post("/api/models/load-from-hf")
+@app.post("/api/models/sync-hf")
+def load_models_from_hf(req: Optional[LoadFromHfRequest] = None):
+    """
+    Downloads requested or all missing checkpoints from Hugging Face repository
+    (siddudavant/cyberxai-models) into models/ and warms all in-memory PyTorch / Scikit-learn caches.
+    """
+    from model_registry import ensure_model
+    token = _get_hf_token()
+    if not token:
+        raise HTTPException(
+            400, "HF_TOKEN not found in environment or .env file. Unable to authenticate with Hugging Face Hub."
+        )
+
+    requested = req.models if (req and req.models) else None
+    force = req.force_download if req else False
+
+    targets = []
+    if requested:
+        targets = [fn for fn in requested if any(m["filename"] == fn for m in HF_MODEL_CATALOG)]
+    else:
+        targets = [m["filename"] for m in HF_MODEL_CATALOG]
+
+    downloaded = []
+    already_cached = []
+    errors = []
+
+    models_dir = ROOT / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    from huggingface_hub import hf_hub_download
+    import shutil
+
+    for fn in targets:
+        local_p = models_dir / fn
+        if local_p.exists() and not force:
+            already_cached.append(fn)
+            continue
+
+        try:
+            downloaded_temp = hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=fn,
+                token=token,
+            )
+            shutil.copy2(downloaded_temp, local_p)
+            downloaded.append(fn)
+        except Exception as e:
+            errors.append({"filename": fn, "error": str(e)})
+
+    # Warm all in-memory model inference engines
+    warmed = []
+    try:
+        from url_pipeline.explain_dl import load_dl_artifacts
+        load_dl_artifacts.cache_clear()
+        load_dl_artifacts()
+        warmed.append("HybridURLNet (PyTorch Tabular DL + GradientSHAP)")
+    except Exception as e:
+        print(f"[load-from-hf] Warning warming DL model: {e}")
+
+    try:
+        from url_pipeline.explain_gnn import load_gnn_artifacts
+        load_gnn_artifacts.cache_clear()
+        load_gnn_artifacts()
+        warmed.append("URLInfraGNN (Graph Attention Network)")
+    except Exception as e:
+        print(f"[load-from-hf] Warning warming GNN model: {e}")
+
+    try:
+        from url_pipeline.explain import load_artifacts as load_url_artifacts
+        load_url_artifacts.cache_clear()
+        load_url_artifacts()
+        warmed.append("URL Voting Classifier & TreeSHAP Ensemble")
+    except Exception as e:
+        print(f"[load-from-hf] Warning warming Ensemble model: {e}")
+
+    try:
+        from malware_pipeline.explain import load_artifacts as load_malware_artifacts
+        load_malware_artifacts.cache_clear()
+        load_malware_artifacts()
+        warmed.append("CIC-MalMem Dynamic Memory Forensics Pipeline")
+    except Exception as e:
+        print(f"[load-from-hf] Warning warming Malware model: {e}")
+
+    return {
+        "status": "success",
+        "repo_id": HF_REPO_ID,
+        "author": "siddudavant",
+        "downloaded_count": len(downloaded),
+        "downloaded_files": downloaded,
+        "cached_count": len(already_cached),
+        "cached_files": already_cached,
+        "warmed_in_memory": warmed,
+        "errors": errors,
+        "message": f"Successfully verified {len(targets)} checkpoints from Hugging Face Hub ({len(downloaded)} pulled, {len(already_cached)} already cached). {len(warmed)} model pipelines active in RAM.",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/models/reload-cache")
+def reload_model_cache():
+    """
+    Clears and refreshes in-memory inference pipelines for DL, GNN, Ensemble, and Malware models.
+    """
+    warmed = []
+    try:
+        from url_pipeline.explain_dl import load_dl_artifacts
+        load_dl_artifacts.cache_clear()
+        load_dl_artifacts()
+        warmed.append("HybridURLNet (PyTorch Tabular DL + GradientSHAP)")
+    except Exception as e:
+        print(f"[reload-cache] DL warm error: {e}")
+
+    try:
+        from url_pipeline.explain_gnn import load_gnn_artifacts
+        load_gnn_artifacts.cache_clear()
+        load_gnn_artifacts()
+        warmed.append("URLInfraGNN (Graph Attention Network)")
+    except Exception as e:
+        print(f"[reload-cache] GNN warm error: {e}")
+
+    try:
+        from url_pipeline.explain import load_artifacts as load_url_artifacts
+        load_url_artifacts.cache_clear()
+        load_url_artifacts()
+        warmed.append("URL Voting Classifier & TreeSHAP Ensemble")
+    except Exception as e:
+        print(f"[reload-cache] Ensemble warm error: {e}")
+
+    try:
+        from malware_pipeline.explain import load_artifacts as load_malware_artifacts
+        load_malware_artifacts.cache_clear()
+        load_malware_artifacts()
+        warmed.append("CIC-MalMem Dynamic Memory Forensics Pipeline")
+    except Exception as e:
+        print(f"[reload-cache] Malware warm error: {e}")
+
+    return {
+        "status": "success",
+        "message": "Model memory caches successfully invalidated and warmed up.",
+        "active_pipelines": warmed,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
