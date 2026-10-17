@@ -37,16 +37,32 @@ DATASET_DIR = ROOT / "Dataset"
 OUTPUT_CSV = DATASET_DIR / "merged_clean_urls.csv"
 OUTPUT_PKL = DATASET_DIR / "merged_clean_urls.pkl"
 
+KAGGLE_CACHE_DIR = Path("D:/kagglehub_cache/datasets")
+
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
 _INVALID_START_RE = re.compile(r"^[#$%\s\x00-\x1f]")
 _YEAR_PATH_RE = re.compile(r"/(199\d|20[0-2]\d)/")
 
+# Defacement is a specific attack taxonomy class verified from Zone-H;
+# generic binary labels like "bad" or "malicious" must not overwrite it.
 LABEL_PRIORITY = {
-    "malware": 4,
-    "phishing": 3,
-    "defacement": 2,
+    "defacement": 10,
+    "malware": 5,
+    "phishing": 4,
     "benign": 1,
 }
+
+
+def resolve_source_file(local_filename: str, cache_pattern: str = "") -> Optional[Path]:
+    """Finds a dataset file in DATASET_DIR or falls back to Kagglehub cache."""
+    p = DATASET_DIR / local_filename
+    if p.exists():
+        return p
+    if cache_pattern and KAGGLE_CACHE_DIR.exists():
+        matches = list(KAGGLE_CACHE_DIR.glob(cache_pattern))
+        if matches:
+            return matches[0]
+    return None
 
 AUTHORITATIVE_BENIGN_DOMAINS = {
     "google.com": 1997,
@@ -299,8 +315,8 @@ def merge_and_sort_all_datasets() -> Path:
             stats["unique_added"] += 1
 
     # 1. Kaggle malicious_phish.csv (651k rows)
-    p_mal_phish = DATASET_DIR / "malicious_phish.csv"
-    if p_mal_phish.exists():
+    p_mal_phish = resolve_source_file("malicious_phish.csv", "**/malicious_phish.csv")
+    if p_mal_phish and p_mal_phish.exists():
         log(f"Loading {p_mal_phish.name} ...")
         with open(p_mal_phish, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
@@ -310,8 +326,8 @@ def merge_and_sort_all_datasets() -> Path:
                     add_record(row[0], row[1], "kaggle_malicious_phish")
 
     # 2. Kaggle phishing_site_urls.csv (549k rows)
-    p_phish_sites = DATASET_DIR / "phishing_site_urls.csv"
-    if p_phish_sites.exists():
+    p_phish_sites = resolve_source_file("phishing_site_urls.csv", "**/phishing_site_urls.csv")
+    if p_phish_sites and p_phish_sites.exists():
         log(f"Loading {p_phish_sites.name} ...")
         with open(p_phish_sites, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
@@ -321,8 +337,8 @@ def merge_and_sort_all_datasets() -> Path:
                     add_record(row[0], row[1], "kaggle_phishing_site_urls")
 
     # 3. Kaggle urldata.csv (450k rows)
-    p_urldata = DATASET_DIR / "siddharthkumar25_malicious-and-benign-urls_urldata.csv"
-    if p_urldata.exists():
+    p_urldata = resolve_source_file("siddharthkumar25_malicious-and-benign-urls_urldata.csv", "**/urldata.csv")
+    if p_urldata and p_urldata.exists():
         log(f"Loading {p_urldata.name} ...")
         with open(p_urldata, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
@@ -332,8 +348,8 @@ def merge_and_sort_all_datasets() -> Path:
                     add_record(row[1], row[2], "kaggle_urldata")
 
     # 4. Kaggle shashwatwork dataset_phishing.csv (11k rows)
-    p_shashwat = DATASET_DIR / "shashwatwork_web-page-phishing-detection-dataset_dataset_phishing.csv"
-    if p_shashwat.exists():
+    p_shashwat = resolve_source_file("shashwatwork_web-page-phishing-detection-dataset_dataset_phishing.csv", "**/dataset_phishing.csv")
+    if p_shashwat and p_shashwat.exists():
         log(f"Loading {p_shashwat.name} ...")
         with open(p_shashwat, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
@@ -469,7 +485,82 @@ def merge_and_sort_all_datasets() -> Path:
                 who_published_flags="Authoritative Web Registry & Cloudflare Intelligence"
             )
 
-    log(f"Merged total {len(dataset_records):,} unique URLs across all 10 sources.")
+    # 11. Kaggle PhiUSIIL (235k rows with DOM/structural behavioral features)
+    p_phi = resolve_source_file("muhammadfaizanhassan_phiusiil-phishing-url-website_PhiUSIIL_Phishing_URL_Dataset.csv", "**/PhiUSIIL_Phishing_URL_Dataset.csv")
+    if p_phi and p_phi.exists():
+        log(f"Loading {p_phi.name} ...")
+        with open(p_phi, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            url_idx = 1
+            label_idx = -1
+            if header:
+                for idx, col in enumerate(header):
+                    if col.strip().upper() == "URL":
+                        url_idx = idx
+                    elif col.strip().lower() == "label":
+                        label_idx = idx
+            for row in reader:
+                if row and len(row) > max(url_idx, label_idx):
+                    u = row[url_idx].strip()
+                    lbl = row[label_idx].strip()
+                    norm_cls = "benign" if lbl == "1" else "phishing"
+                    how = "PhiUSIIL Structural Feature Validation" if norm_cls == "benign" else "PhiUSIIL Phishing Webpage Behavioral Fingerprint"
+                    who = "PhiUSIIL Security Research Benchmark"
+                    add_record(u, norm_cls, "kaggle_phiusiil", published_year=2024, how_detected=how, who_published_flags=who)
+
+    # 12. Kaggle samahsadiq (46MB balanced benign and malicious URLs)
+    p_samah = resolve_source_file("samahsadiq_benign-and-malicious-urls_balanced_urls.csv", "**/balanced_urls.csv")
+    if p_samah and p_samah.exists():
+        log(f"Loading {p_samah.name} ...")
+        with open(p_samah, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 2:
+                    u = row[0].strip()
+                    lbl = row[1].strip()
+                    add_record(
+                        u, lbl, "kaggle_samahsadiq",
+                        how_detected="Samah Sadiq Multi-Source URL Feature Heuristics",
+                        who_published_flags="Samah Sadiq Cybersecurity Corpus"
+                    )
+
+    # 13. Kaggle antonyj453 (23MB bad vs good URLs)
+    p_antony = resolve_source_file("antonyj453_urldataset_data.csv", "antonyj453/**/data.csv")
+    if p_antony and p_antony.exists():
+        log(f"Loading {p_antony.name} ...")
+        with open(p_antony, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 2:
+                    u = row[0].strip()
+                    lbl = "phishing" if row[1].strip().lower() == "bad" else "benign"
+                    add_record(
+                        u, lbl, "kaggle_antonyj",
+                        how_detected="Autonomous Web Scraper & Malicious Host Forensics",
+                        who_published_flags="Antony J. Malicious URL Project"
+                    )
+
+    # 14. Kaggle harisudhan411 (42MB status 0=phishing, 1=benign)
+    p_hari = resolve_source_file("harisudhan411_phishing-and-legitimate-urls_new_data_urls.csv", "**/new_data_urls.csv")
+    if p_hari and p_hari.exists():
+        log(f"Loading {p_hari.name} ...")
+        with open(p_hari, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 2:
+                    u = row[0].strip()
+                    lbl = "benign" if row[1].strip() == "1" else "phishing"
+                    add_record(
+                        u, lbl, "kaggle_harisudhan",
+                        how_detected="GoDaddy & Active Threat URL Verification",
+                        who_published_flags="Harisudhan Cybersecurity URL Intelligence"
+                    )
+
+    log(f"Merged total {len(dataset_records):,} unique URLs across all 14 sources.")
     log(f"Discarded invalid rows: {stats['invalid_discarded']:,} | Collisions upgraded: {stats['collision_promoted']:,}")
 
     # Sorting deterministically by type and then URL
@@ -503,7 +594,39 @@ def merge_and_sort_all_datasets() -> Path:
         pct = (count / len(records_list)) * 100
         log(f"  - {cls_name:<12}: {count:,} ({pct:.1f}%)")
 
+    # Delete unwanted raw/intermediate datasets as requested
+    cleanup_unwanted_datasets()
+
     return OUTPUT_CSV
+
+
+def cleanup_unwanted_datasets() -> None:
+    log("Cleaning up intermediate and unwanted raw datasets after merging...")
+    unwanted = [
+        DATASET_DIR / "malicious_phish.csv",
+        DATASET_DIR / "phishing_site_urls.csv",
+        DATASET_DIR / "siddharthkumar25_malicious-and-benign-urls_urldata.csv",
+        DATASET_DIR / "shashwatwork_web-page-phishing-detection-dataset_dataset_phishing.csv",
+        DATASET_DIR / "muhammadfaizanhassan_phiusiil-phishing-url-website_PhiUSIIL_Phishing_URL_Dataset.csv",
+        DATASET_DIR / "samahsadiq_benign-and-malicious-urls_balanced_urls.csv",
+        DATASET_DIR / "antonyj453_urldataset_data.csv",
+        DATASET_DIR / "harisudhan411_phishing-and-legitimate-urls_new_data_urls.csv",
+        DATASET_DIR / "combined_urls.csv",
+        DATASET_DIR / "openphish_feed.txt",
+    ]
+    freed_bytes = 0
+    deleted_count = 0
+    for p in unwanted:
+        if p.exists():
+            try:
+                sz = p.stat().st_size
+                p.unlink()
+                freed_bytes += sz
+                deleted_count += 1
+                log(f"  [DELETED] {p.name} ({sz / 1e6:.1f} MB)")
+            except Exception as e:
+                log(f"  [WARNING] Could not delete {p.name}: {e}")
+    log(f"Cleanup complete: Deleted {deleted_count} unwanted files, freed {freed_bytes / 1e6:.1f} MB (~{freed_bytes / 1e9:.2f} GB) of disk space.")
 
 
 if __name__ == "__main__":

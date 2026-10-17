@@ -299,7 +299,7 @@ def train_gnn_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(description="Train URLInfraGNN on actual URL dataset.")
-    parser.add_argument("--data", type=str, default="Dataset/combined_urls.csv", help="Dataset path")
+    parser.add_argument("--data", type=str, default="Dataset/merged_clean_urls.csv", help="Dataset path")
     parser.add_argument("--sample-size", type=int, default=15000, help="Stratified sample rows (default: 15,000)")
     parser.add_argument("--epochs", type=int, default=8, help="Epoch count")
     parser.add_argument("--batch-size", type=int, default=256, help="Batch size")
