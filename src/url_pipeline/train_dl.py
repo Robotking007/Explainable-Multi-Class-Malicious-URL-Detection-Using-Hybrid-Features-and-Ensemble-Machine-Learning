@@ -194,7 +194,7 @@ def train_dl_pipeline(
     if not data_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {data_path}")
 
-    if ("combined_urls" in str(data_path) or "malicious_phish" in str(data_path)) and sample_size > 0:
+    if ("combined_urls" in str(data_path) or "malicious_phish" in str(data_path) or "merged_clean" in str(data_path)) and sample_size > 0:
         df = load_stratified_dataset(data_path, target_total=sample_size)
 
     elif str(data_path).endswith(".parquet"):
@@ -416,7 +416,11 @@ def train_dl_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(description="Train Tabular Deep Learning model for URL detection.")
-    default_data = "Dataset/malicious_phish.csv" if (ROOT / "Dataset/malicious_phish.csv").exists() else "Dataset/combined_urls.csv"
+    default_data = (
+        "Dataset/merged_clean_urls.csv"
+        if (ROOT / "Dataset/merged_clean_urls.csv").exists()
+        else ("Dataset/malicious_phish.csv" if (ROOT / "Dataset/malicious_phish.csv").exists() else "Dataset/combined_urls.csv")
+    )
     parser.add_argument("--data", type=str, default=default_data, help="Path to URL dataset")
     parser.add_argument("--sample-size", type=int, default=10000, help="Number of rows to sample for training")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
