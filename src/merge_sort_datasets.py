@@ -30,10 +30,12 @@ from pathlib import Path
 from typing import Dict, Set, Tuple, Optional
 
 import tldextract
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 DATASET_DIR = ROOT / "Dataset"
 OUTPUT_CSV = DATASET_DIR / "merged_clean_urls.csv"
+OUTPUT_PKL = DATASET_DIR / "merged_clean_urls.pkl"
 
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
 _INVALID_START_RE = re.compile(r"^[#$%\s\x00-\x1f]")
@@ -484,7 +486,15 @@ def merge_and_sort_all_datasets() -> Path:
             writer.writerow([orig_url, label, pub_year, how_det, who_pub])
 
     file_size_mb = OUTPUT_CSV.stat().st_size / 1e6
-    log(f"Successfully saved {len(records_list):,} clean rows to {OUTPUT_CSV.name} ({file_size_mb:.1f} MB) in {time.time()-t0:.1f}s.")
+    log(f"Successfully saved {len(records_list):,} clean rows to {OUTPUT_CSV.name} ({file_size_mb:.1f} MB).")
+
+    # Write out to PKL
+    log(f"Writing sorted clean dataset to pickle format {OUTPUT_PKL} ...")
+    df_out = pd.DataFrame(records_list, columns=["url", "type", "published_year", "how_detected", "who_published_flags"])
+    df_out["published_year"] = pd.to_numeric(df_out["published_year"], errors="coerce").fillna(2024).astype("int32")
+    df_out.to_pickle(OUTPUT_PKL)
+    pkl_size_mb = OUTPUT_PKL.stat().st_size / 1e6
+    log(f"Successfully saved {OUTPUT_PKL.name} ({pkl_size_mb:.1f} MB) in {time.time()-t0:.1f}s.")
 
     # Class breakdown
     class_counts = Counter(item[1] for item in records_list)
