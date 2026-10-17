@@ -172,7 +172,9 @@ def extract_features_row(raw_url: str) -> dict:
     # subdomain like "paypal.evil.com").
     feats["subdomain_length"] = len(subdomain)
     feats["domain_token_count"] = len([t for t in re.split(r"[-.]", domain) if t])
-    feats["brand_in_domain_flag"] = int(any(b in domain.lower() for b in BRAND_KEYWORDS))
+    feats["brand_in_domain_flag"] = int(
+        any(b in domain.lower() and domain.lower() != b for b in BRAND_KEYWORDS)
+    )
 
     # ---- Content keyword counts (computed on URL string; no page fetch) ----
     feats["phish_keyword_count"] = sum(k in lower_url for k in PHISH_KEYWORDS)
@@ -206,7 +208,26 @@ def extract_features_row(raw_url: str) -> dict:
     special_chars = sum(1 for c in url if not c.isalnum())
     feats["special_char_ratio"] = special_chars / max(len(url), 1)
 
+    # ---- Abuse.ch Threat Intelligence Features ----
+    try:
+        try:
+            from url_pipeline.abuse_features import extract_abuse_features_row
+        except ImportError:
+            from src.url_pipeline.abuse_features import extract_abuse_features_row
+        feats.update(extract_abuse_features_row(url))
+    except Exception:
+        feats["abuse_threatfox_match"] = 0.0
+        feats["abuse_urlhaus_match"] = 0.0
+        feats["abuse_confidence_score"] = 0.0
+        feats["abuse_payload_delivery_flag"] = 0.0
+        feats["abuse_c2_flag"] = 0.0
+        feats["abuse_online_flag"] = 0.0
+        feats["abuse_tld_risk_score"] = 0.0
+        feats["abuse_ioc_match_any"] = 0.0
+
+
     return feats
+
 
 
 def build_static_features(urls: pd.Series, chunk_size: int = 500_000) -> pd.DataFrame:

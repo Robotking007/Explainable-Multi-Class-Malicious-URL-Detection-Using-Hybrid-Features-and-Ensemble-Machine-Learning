@@ -39,7 +39,7 @@ MODEL_DIR = ROOT / "models"
 REPORTS_DIR = ROOT / "reports"
 
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 import os
 
 
@@ -52,39 +52,109 @@ def _extract_chunk(urls: list[str]) -> list[dict]:
 
 
 def extract_features_df(df: pd.DataFrame, url_col: str = "url", max_workers: Optional[int] = None) -> pd.DataFrame:
-    """Extracts 45 features in parallel across CPU cores."""
+    """Extracts all 53 hybrid features (lexical, host, structural, keyword, statistical, and Abuse.ch) in parallel."""
+    # Pre-warm singleton threat index on main thread to avoid thread contention on first miss
+    try:
+        try:
+            from url_pipeline.abuse_features import get_abuse_index
+        except ImportError:
+            from src.url_pipeline.abuse_features import get_abuse_index
+        get_abuse_index()
+    except Exception:
+        pass
+
     urls = [str(u) for u in df[url_col]]
-    n_workers = max_workers or min(os.cpu_count() or 4, 12)
+    n_workers = max_workers or min(os.cpu_count() or 4, 8)
     chunk_size = max(1, len(urls) // (n_workers * 4))
     url_chunks = [urls[i:i + chunk_size] for i in range(0, len(urls), chunk_size)]
 
+
     dfs = []
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
         for chunk_result in executor.map(_extract_chunk, url_chunks):
             dfs.append(pd.DataFrame(chunk_result, dtype=np.float32))
 
     return pd.concat(dfs, ignore_index=True)
 
 
+
 def load_stratified_dataset(data_path: Path, target_total: int = 100000) -> pd.DataFrame:
-    """Streams combined_urls.csv in chunks to collect a balanced sample across all 4 classes."""
+    """Streams combined_urls.csv / malicious_phish.csv and injects fresh Abuse.ch + PhishTank samples to collect a balanced sample."""
     log(f"Streaming from actual dataset {data_path} to assemble ~{target_total:,} balanced rows...")
     target_per_class = target_total // 4
     collected = {c: [] for c in ["benign", "phishing", "malware", "defacement"]}
-    
-    # Read in chunks of 100k
+
+    dataset_dir = data_path.parent
+
+    # 1. Inject fresh Abuse.ch ThreatFox & URLhaus malware URLs
+    try:
+        try:
+            from url_pipeline.abuse_features import get_abuse_index
+        except ImportError:
+            from src.url_pipeline.abuse_features import get_abuse_index
+        idx = get_abuse_index()
+        malware_urls = list(idx.tf_urls | idx.uh_urls)[:target_per_class // 3]
+        if malware_urls:
+            collected["malware"].append(pd.DataFrame({"url": malware_urls, "type": "malware"}))
+            log(f"Injected {len(malware_urls):,} real-time Abuse.ch (ThreatFox/URLhaus) malware samples.")
+    except Exception as e:
+        log(f"Warning injecting Abuse.ch data: {e}")
+
+    # 2. Inject fresh PhishTank verified phishing URLs
+    pt_path = dataset_dir / "verified_online.csv"
+    if pt_path.exists():
+        try:
+            pt_df = pd.read_csv(pt_path, usecols=["url"], nrows=target_per_class // 3)
+            pt_df["type"] = "phishing"
+            collected["phishing"].append(pt_df)
+            log(f"Injected {len(pt_df):,} real-time PhishTank verified phishing samples.")
+        except Exception as e:
+            log(f"Warning injecting PhishTank data: {e}")
+
+    # 2b. Inject top authoritative root & popular benign domains so the model learns legitimate clean apex structures
+    top_benign = [
+        "google.com", "www.google.com", "youtube.com", "www.youtube.com", "facebook.com",
+        "wikipedia.org", "en.wikipedia.org", "amazon.com", "www.amazon.com", "yahoo.com",
+        "reddit.com", "www.reddit.com", "netflix.com", "github.com", "linkedin.com",
+        "microsoft.com", "apple.com", "instagram.com", "twitter.com", "x.com",
+        "cloudflare.com", "bing.com", "ebay.com", "twitch.tv", "adobe.com",
+        "spotify.com", "cnn.com", "bbc.co.uk", "nytimes.com", "theguardian.com",
+        "stackoverflow.com", "medium.com", "quora.com", "imdb.com", "pinterest.com",
+        "tumblr.com", "craigslist.org", "aliexpress.com", "walmart.com", "espn.com",
+        "chase.com", "bankofamerica.com", "wellsfargo.com", "paypal.com", "stripe.com",
+        "dropbox.com", "salesforce.com", "wordpress.org", "harvard.edu", "mit.edu",
+        "stanford.edu", "berkeley.edu", "ox.ac.uk", "cam.ac.uk", "nih.gov", "cdc.gov",
+        "nasa.gov", "who.int", "un.org", "weather.com", "forbes.com", "bloomberg.com",
+        "reuters.com", "wsj.com", "usatoday.com", "archive.org", "vimeo.com", "brown.edu"
+    ]
+    benign_expanded = []
+    for d in top_benign:
+        benign_expanded.append(d)
+        benign_expanded.append(f"https://{d}")
+        benign_expanded.append(f"http://{d}/")
+        if not d.startswith("www.") and "." in d and not d.startswith("en."):
+            benign_expanded.append(f"www.{d}")
+    benign_unique = list(set(benign_expanded))
+    collected["benign"].append(pd.DataFrame({"url": benign_unique, "type": "benign"}))
+    log(f"Injected {len(benign_unique)} authoritative benign root & portal URLs.")
+
+    # 3. Read in chunks of 100k from base corpus
     chunksize = 100000
     for chunk in pd.read_csv(data_path, chunksize=chunksize, usecols=["url", "type"]):
         chunk = chunk.dropna(subset=["url", "type"])
         chunk["type"] = chunk["type"].astype(str).str.lower().str.strip()
-        
+        # Filter out non-URL garbage strings
+        chunk = chunk[chunk["url"].astype(str).str.contains(r"\.", na=False)]
+        chunk = chunk[~chunk["url"].astype(str).str.startswith(("#", "$", "%"))]
+
         for cls_name in list(collected.keys()):
-            if len(collected[cls_name]) < target_per_class:
+            current_count = sum(len(x) for x in collected[cls_name])
+            if current_count < target_per_class:
                 sub = chunk[chunk["type"] == cls_name]
-                needed = target_per_class - len(collected[cls_name])
+                needed = target_per_class - current_count
                 if len(sub) > 0:
                     collected[cls_name].append(sub.iloc[:needed])
-        
+
         counts = {c: sum(len(x) for x in chunks) for c, chunks in collected.items()}
         if all(counts[c] >= target_per_class for c in collected):
             break
@@ -95,7 +165,7 @@ def load_stratified_dataset(data_path: Path, target_total: int = 100000) -> pd.D
             dfs.append(pd.concat(chunk_list, ignore_index=True))
 
     full_df = pd.concat(dfs, ignore_index=True).sample(frac=1.0, random_state=42).reset_index(drop=True)
-    log(f"Assembled stratified sample: {len(full_df):,} total rows.")
+    log(f"Assembled stratified sample: {len(full_df):,} total rows with Abuse.ch & PhishTank feeds.")
     return full_df
 
 
@@ -124,8 +194,9 @@ def train_dl_pipeline(
     if not data_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {data_path}")
 
-    if "combined_urls" in str(data_path) and sample_size > 0:
+    if ("combined_urls" in str(data_path) or "malicious_phish" in str(data_path)) and sample_size > 0:
         df = load_stratified_dataset(data_path, target_total=sample_size)
+
     elif str(data_path).endswith(".parquet"):
         df = pd.read_parquet(data_path)
     else:
@@ -345,7 +416,8 @@ def train_dl_pipeline(
 
 def main():
     parser = argparse.ArgumentParser(description="Train Tabular Deep Learning model for URL detection.")
-    parser.add_argument("--data", type=str, default="Dataset/combined_urls.csv", help="Path to URL dataset")
+    default_data = "Dataset/malicious_phish.csv" if (ROOT / "Dataset/malicious_phish.csv").exists() else "Dataset/combined_urls.csv"
+    parser.add_argument("--data", type=str, default=default_data, help="Path to URL dataset")
     parser.add_argument("--sample-size", type=int, default=10000, help="Number of rows to sample for training")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=256, help="Batch size")
