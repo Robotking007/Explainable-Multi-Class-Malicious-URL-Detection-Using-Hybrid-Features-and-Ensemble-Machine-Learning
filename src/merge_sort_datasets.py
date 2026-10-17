@@ -1,13 +1,17 @@
 """
 Module to merge, clean, deduplicate, and sort all URL datasets:
-  1. Kaggle sid321axn (Dataset/malicious_phish.csv) - 651k rows (multi-class)
-  2. Kaggle taruntiwarihp (Dataset/phishing_site_urls.csv) - 549k rows (binary good/bad)
-  3. Abuse.ch ThreatFox (Dataset/threatfox_full.csv) - 112k verified IOCs (malware)
-  4. Abuse.ch URLhaus (Dataset/file.csv.txt) - 73k verified malware URLs (malware)
-  5. PhishTank (Dataset/verified_online.csv) - verified zero-day phishing feed (phishing)
-  6. Authoritative benign root & portal domains - top global clean web infrastructure
+  1. Kaggle sid321axn (Dataset/malicious_phish.csv) - 651k rows multi-class
+  2. Kaggle taruntiwarihp (Dataset/phishing_site_urls.csv) - 549k rows binary
+  3. Kaggle siddharthkumar25 (Dataset/siddharthkumar25_malicious-and-benign-urls_urldata.csv) - 450k rows
+  4. Kaggle shashwatwork (Dataset/shashwatwork_web-page-phishing-detection-dataset_dataset_phishing.csv) - 11k rows
+  5. Abuse.ch ThreatFox (Dataset/threatfox_full.csv) - 112k verified IOCs (malware)
+  6. Abuse.ch URLhaus (Dataset/file.csv.txt) - 73k verified malware URLs (malware)
+  7. PhishTank (Dataset/verified_online.csv) - verified phishing URLs (phishing)
+  8. OpenPhish (Dataset/openphish_feed.txt) - live zero-day verified phishing feed (phishing)
+  9. Tranco Top Benign Domains (Dataset/tranco_top_1m.csv) - top research benign domains
+ 10. Authoritative portal and cloud roots - apex & subdomains
 
-Cleaning rules:
+Cleaning & sorting rules:
   - Validates URLs have a domain/host with a dot ('.')
   - Strips wrapping quotes and whitespace
   - Drops corrupt/binary noise strings (control chars, non-ASCII garbage)
@@ -61,15 +65,13 @@ def log(msg: str) -> None:
 
 
 def is_valid_url_string(s: str) -> bool:
-    """Checks if a string is a valid printable URL candidates."""
+    """Checks if a string is a valid printable URL candidate."""
     if not s or len(s) < 3 or len(s) > 2048:
         return False
     if _INVALID_START_RE.match(s):
         return False
-    # Must have at least one dot for domain/host/TLD/IP
     if "." not in s:
         return False
-    # Reject binary non-ASCII control characters
     for c in s:
         code = ord(c)
         if code < 32 or code > 126:
@@ -85,10 +87,9 @@ def normalize_for_dedup(raw: str) -> str:
 
 
 def merge_and_sort_all_datasets() -> Path:
-    log("Starting dataset merge and sort process...")
+    log("Starting comprehensive dataset merge and sort process...")
     t0 = time.time()
 
-    # In-memory store: norm_key -> (original_url, label)
     dataset_records: Dict[str, Tuple[str, str]] = {}
     stats = Counter()
 
@@ -100,10 +101,12 @@ def merge_and_sort_all_datasets() -> Path:
             return
 
         norm_label = label.strip().lower()
-        if norm_label in ("good", "legitimate", "safe", "ham"):
+        if norm_label in ("good", "legitimate", "safe", "ham", "clean"):
             norm_label = "benign"
         elif norm_label in ("bad", "spam"):
             norm_label = "phishing"
+        elif norm_label in ("malicious", "malware", "botnet", "trojan", "ransomware", "c2"):
+            norm_label = "malware"
 
         if norm_label not in LABEL_PRIORITY:
             stats["unknown_label_discarded"] += 1
@@ -117,7 +120,6 @@ def merge_and_sort_all_datasets() -> Path:
         if key in dataset_records:
             stats["duplicate_seen"] += 1
             existing_url, existing_label = dataset_records[key]
-            # Keep higher priority security label
             if LABEL_PRIORITY[norm_label] > LABEL_PRIORITY[existing_label]:
                 dataset_records[key] = (clean_url, norm_label)
                 stats["collision_promoted"] += 1
@@ -131,7 +133,7 @@ def merge_and_sort_all_datasets() -> Path:
         log(f"Loading {p_mal_phish.name} ...")
         with open(p_mal_phish, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
-            header = next(reader, None)
+            next(reader, None)
             for row in reader:
                 if row and len(row) >= 2:
                     add_record(row[0], row[1], "kaggle_malicious_phish")
@@ -142,12 +144,34 @@ def merge_and_sort_all_datasets() -> Path:
         log(f"Loading {p_phish_sites.name} ...")
         with open(p_phish_sites, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
-            header = next(reader, None)
+            next(reader, None)
             for row in reader:
                 if row and len(row) >= 2:
                     add_record(row[0], row[1], "kaggle_phishing_site_urls")
 
-    # 3. Abuse.ch ThreatFox (112k IOCs)
+    # 3. Kaggle siddharthkumar25_malicious-and-benign-urls_urldata.csv (450k rows)
+    p_urldata = DATASET_DIR / "siddharthkumar25_malicious-and-benign-urls_urldata.csv"
+    if p_urldata.exists():
+        log(f"Loading {p_urldata.name} ...")
+        with open(p_urldata, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 3:
+                    add_record(row[1], row[2], "kaggle_urldata")
+
+    # 4. Kaggle shashwatwork dataset_phishing.csv (11k rows)
+    p_shashwat = DATASET_DIR / "shashwatwork_web-page-phishing-detection-dataset_dataset_phishing.csv"
+    if p_shashwat.exists():
+        log(f"Loading {p_shashwat.name} ...")
+        with open(p_shashwat, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 2:
+                    add_record(row[0], row[-1], "kaggle_shashwat_phishing")
+
+    # 5. Abuse.ch ThreatFox (112k IOCs)
     p_threatfox = DATASET_DIR / "threatfox_full.csv"
     if p_threatfox.exists():
         log(f"Loading {p_threatfox.name} ...")
@@ -156,10 +180,9 @@ def merge_and_sort_all_datasets() -> Path:
             for row in reader:
                 if not row or not row[0] or row[0].startswith("#") or len(row) < 3:
                     continue
-                ioc_val = row[2].strip()
-                add_record(ioc_val, "malware", "abusech_threatfox")
+                add_record(row[2].strip(), "malware", "abusech_threatfox")
 
-    # 4. Abuse.ch URLhaus (73k URLs)
+    # 6. Abuse.ch URLhaus (73k URLs)
     p_urlhaus = DATASET_DIR / "file.csv.txt"
     if p_urlhaus.exists():
         log(f"Loading {p_urlhaus.name} ...")
@@ -168,21 +191,46 @@ def merge_and_sort_all_datasets() -> Path:
             for row in reader:
                 if not row or not row[0] or row[0].startswith("#") or len(row) < 3:
                     continue
-                url_val = row[2].strip()
-                add_record(url_val, "malware", "abusech_urlhaus")
+                add_record(row[2].strip(), "malware", "abusech_urlhaus")
 
-    # 5. PhishTank verified_online.csv
+    # 7. PhishTank verified_online.csv
     p_phishtank = DATASET_DIR / "verified_online.csv"
     if p_phishtank.exists():
         log(f"Loading {p_phishtank.name} ...")
         with open(p_phishtank, "r", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
-            header = next(reader, None)
+            next(reader, None)
             for row in reader:
                 if row and len(row) >= 2:
                     add_record(row[1], "phishing", "phishtank_online")
 
-    # 6. Authoritative benign root & portal domains
+    # 8. OpenPhish live feed
+    p_openphish = DATASET_DIR / "openphish_feed.txt"
+    if p_openphish.exists():
+        log(f"Loading {p_openphish.name} ...")
+        with open(p_openphish, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line_s = line.strip()
+                if line_s:
+                    add_record(line_s, "phishing", "openphish_live")
+
+    # 9. Tranco Top Benign Domains (Sample top 50,000 for benign domain stability)
+    p_tranco = DATASET_DIR / "tranco_top_1m.csv"
+    if p_tranco.exists():
+        log(f"Loading top 50,000 domains from {p_tranco.name} ...")
+        tranco_count = 0
+        with open(p_tranco, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if row and len(row) >= 2:
+                    d = row[1].strip()
+                    add_record(d, "benign", "tranco_benign")
+                    add_record(f"https://{d}", "benign", "tranco_benign")
+                    tranco_count += 1
+                    if tranco_count >= 50000:
+                        break
+
+    # 10. Authoritative benign root & portal domains
     log("Injecting authoritative benign domains and variations...")
     for d in AUTHORITATIVE_BENIGN_DOMAINS:
         add_record(d, "benign", "authoritative_benign")
@@ -191,13 +239,12 @@ def merge_and_sort_all_datasets() -> Path:
         if not d.startswith("www.") and "." in d and not d.startswith("en."):
             add_record(f"www.{d}", "benign", "authoritative_benign")
 
-    log(f"Merged total {len(dataset_records):,} unique URLs across all sources.")
+    log(f"Merged total {len(dataset_records):,} unique URLs across all 10 sources.")
     log(f"Discarded invalid rows: {stats['invalid_discarded']:,} | Collisions upgraded: {stats['collision_promoted']:,}")
 
     # Sorting
     log("Sorting merged dataset by class ('type') and URL...")
     records_list = list(dataset_records.values())
-    # Sort deterministically: primary key: type, secondary key: lowercase URL
     records_list.sort(key=lambda item: (item[1], item[0].lower()))
 
     # Write out to CSV
