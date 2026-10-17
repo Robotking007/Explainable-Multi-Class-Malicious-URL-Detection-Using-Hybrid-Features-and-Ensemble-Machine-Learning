@@ -173,7 +173,7 @@ def extract_features_row(raw_url: str) -> dict:
     )
     feats["subdomain_length"] = len(subdomain)
     feats["domain_token_count"] = len([t for t in re.split(r"[-.]", domain) if t])
-    feats["brand_in_domain_flag"] = int(any(b in domain.lower() for b in BRAND_KEYWORDS))
+    feats["brand_in_domain_flag"] = int(any(b in domain.lower() and domain.lower() != b for b in BRAND_KEYWORDS))
 
     feats["phish_keyword_count"] = sum(k in lower_url for k in PHISH_KEYWORDS)
     feats["brand_keyword_count"] = sum(k in lower_url for k in BRAND_KEYWORDS)

@@ -170,7 +170,7 @@ def extract_features_row(url: str) -> dict:
             "domain_entropy": float(_entropy(domain)),
             "subdomain_length": float(sum(len(p) for p in parts[:-2]) if subdomain_count else 0),
             "domain_token_count": float(len(parts)),
-            "brand_in_domain_flag": float(any(b in domain for b in BRAND_KEYWORDS)),
+            "brand_in_domain_flag": float(any(b in domain and domain != b for b in BRAND_KEYWORDS)),
             "brand_in_subdomain_flag": float(any(b in ".".join(parts[:-2]) for b in BRAND_KEYWORDS) if subdomain_count else 0),
             "phish_keyword_count": float(sum(k in url_lower for k in PHISH_KEYWORDS)),
             "brand_keyword_count": float(sum(b in url_lower for b in BRAND_KEYWORDS)),
@@ -248,6 +248,9 @@ def find_data_file() -> Path:
         if p.is_file():
             log(f"  Found file: {p} ({p.stat().st_size:,} bytes)")
 
+    for p in IN_DIR.rglob("merged_clean_urls.csv"):
+        log(f"Selected dataset file: {p}")
+        return p
     for p in IN_DIR.rglob("combined_urls.csv"):
         log(f"Selected dataset file: {p}")
         return p
@@ -257,7 +260,7 @@ def find_data_file() -> Path:
     for p in IN_DIR.rglob("*.csv"):
         log(f"Selected csv file: {p}")
         return p
-    raise FileNotFoundError("Could not find combined_urls.csv anywhere in /kaggle/input")
+    raise FileNotFoundError("Could not find merged_clean_urls.csv or combined_urls.csv anywhere in /kaggle/input")
 
 
 def main():

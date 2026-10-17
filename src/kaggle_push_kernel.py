@@ -22,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_PATH = Path.home() / ".kaggle" / "access_token"
-KERNEL_SLUG = "siddudavant/cyberxai-url-training"
+KERNEL_SLUG = "siddudavant/cyberxai-url-module-b-training"
 KERNEL_ID = 135009902  # set after first successful push -- omit (None) to create a brand-new kernel instead
 DATASET_SOURCE = "siddudavant/cyberxai-combined-urls"
 SCRIPT_PATH = ROOT / "src" / "kaggle_kernel_train_url.py"
