@@ -48,22 +48,13 @@ from xgboost import XGBClassifier
 
 DATA_PATH = Path("/kaggle/input/cyberxai-combined-urls/combined_urls.csv")
 OUT_DIR = Path("/kaggle/working")
+HF_TOKEN = ""  # Populated dynamically by kernel push script or env
+HF_REPO_ID = "siddudavant/cyberxai-models"
 TOP_K = 30
 NGRAM_FEATURES = 100
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
-# Cap for the two smallest classes (defacement/malware, ~200k/~187k) after
-# SMOTE -- NOT full parity with benign (10.89M). At 20M+ total rows,
-# fully balancing every class to match benign would need ~40M+ rows,
-# mostly synthetic/interpolated, which is both computationally
-# impractical and actively hurts generalization (SMOTE's linear
-# interpolation over sparse n-gram features tends to manufacture
-# unrealistic points rather than real diversity at this ratio). A moderate
-# 1.2M-row cap gives real headroom over the raw counts without drowning
-# the signal in synthetic noise, and class_weight="balanced" (RF/LR) plus
-# sample_weight (XGBoost) handles the remaining imbalance via the loss
-# function instead of via manufactured data.
-SMOTE_TARGET_PER_MINORITY_CLASS = 1_200_000
+SMOTE_TARGET_PER_MINORITY_CLASS = 100_000
 
 
 def log(msg: str) -> None:
@@ -314,14 +305,51 @@ def main():
     data_path = DATA_PATH
     if not data_path.exists():
         candidates = list(Path("/kaggle/input").rglob("combined_urls.csv"))
+        if not candidates:
+            candidates = list(Path("/kaggle/input").rglob("merged_clean_urls.csv"))
+        if not candidates:
+            candidates = list(Path("/kaggle/input").rglob("*.csv"))
         if candidates:
             data_path = candidates[0]
             log(f"DATA_PATH did not exist; found actual file at {data_path} instead")
         else:
-            raise FileNotFoundError(f"combined_urls.csv not found anywhere under /kaggle/input (expected {DATA_PATH})")
+            raise FileNotFoundError(f"URL dataset CSV not found anywhere under /kaggle/input (expected {DATA_PATH})")
 
-    log(f"Loading dataset from {data_path}")
-    df = pd.read_csv(data_path).dropna(subset=["url", "type"])
+    log(f"Streaming dataset from {data_path} in chunks with stratified balance across all rows...")
+    chunks = []
+    # Retain 100% of minority attack classes (malware & defacement),
+    # and sample 100k benign + 100k phishing uniformly across the full dataset.
+    target_per_maj = 100_000
+    total_rows_approx = 27_022_952
+    maj_sample_rate = target_per_maj / max(total_rows_approx / 2, 1)
+
+    chunksize = 1_000_000
+    for i, chunk in enumerate(pd.read_csv(data_path, chunksize=chunksize)):
+        col_map = {c.lower(): c for c in chunk.columns}
+        u_col = col_map.get("url", "url")
+        l_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
+        chunk = chunk.dropna(subset=[u_col, l_col])
+        chunk[u_col] = chunk[u_col].astype(str).str.strip()
+        chunk[l_col] = chunk[l_col].astype(str).str.lower().str.strip()
+
+        chunk = chunk[chunk[u_col].str.len() > 3]
+        chunk = chunk[chunk[l_col].isin(["benign", "phishing", "malware", "defacement"])]
+
+        # Separate minority vs majority classes
+        is_minority = chunk[l_col].isin(["defacement", "malware"])
+        minority_df = chunk[is_minority]
+        majority_df = chunk[~is_minority].sample(frac=maj_sample_rate, random_state=42 + i) if not chunk[~is_minority].empty else chunk[~is_minority]
+
+        sampled_chunk = pd.concat([minority_df, majority_df])
+        chunks.append(sampled_chunk[[u_col, l_col]].rename(columns={u_col: "url", l_col: "type"}))
+        if (i + 1) % 5 == 0 or (i + 1) >= 27:
+            log(f"  Chunk {i+1}: running sampled total = {sum(len(c) for c in chunks):,} rows")
+
+    df = pd.concat(chunks, ignore_index=True)
+    del chunks
+    gc.collect()
+
+    log(f"Total sampled dataset rows: {len(df):,}")
     log(f"Class distribution:\n{df['type'].value_counts()}")
 
     log("Splitting train/test (stratified, 80/20)")
@@ -366,7 +394,7 @@ def main():
     # reliable ranking at a small fraction of the memory/time cost.
     log("Ranking engineered features by Random Forest importance (on a subsample, shallow trees) ...")
     rng = np.random.RandomState(RANDOM_STATE)
-    sample_size = min(2_000_000, len(X_train_static))
+    sample_size = min(50_000, len(X_train_static))
     sample_idx = rng.choice(len(X_train_static), size=sample_size, replace=False)
     X_selector_sample = X_train_static.iloc[sample_idx]
     y_selector_sample = y_train.iloc[sample_idx]
@@ -524,6 +552,41 @@ def main():
     with open(OUT_DIR / "url_module_b_metrics.json", "w") as f:
         json.dump(metrics_out, f, indent=2, default=str)
     log(f"Saved model artifacts and metrics to {OUT_DIR}")
+
+    # Direct push to Hugging Face Hub from Kaggle
+    hf_tok = HF_TOKEN or os.environ.get("HF_TOKEN", "")
+    if hf_tok:
+        log(f"Uploading trained model artifacts directly to Hugging Face Hub ({HF_REPO_ID})...")
+        try:
+            try:
+                import huggingface_hub
+            except ImportError:
+                import subprocess
+                subprocess.run([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub"], check=False)
+
+            from huggingface_hub import HfApi
+            api = HfApi(token=hf_tok)
+            for artifact_name in [
+                "url_voting_classifier.joblib",
+                "url_scaler.joblib",
+                "url_label_encoder.joblib",
+                "url_ngram_vectorizer.joblib",
+                "url_selected_features.json",
+                "url_module_b_metrics.json",
+            ]:
+                fpath = OUT_DIR / artifact_name
+                if fpath.exists():
+                    api.upload_file(
+                        path_or_fileobj=str(fpath),
+                        path_in_repo=artifact_name,
+                        repo_id=HF_REPO_ID,
+                        repo_type="model",
+                        token=hf_tok,
+                    )
+                    log(f"Uploaded {artifact_name} to Hugging Face: {HF_REPO_ID}")
+            log("All artifacts successfully published to Hugging Face Hub!")
+        except Exception as e:
+            log(f"Hugging Face Hub direct upload warning: {e}")
 
 
 if __name__ == "__main__":

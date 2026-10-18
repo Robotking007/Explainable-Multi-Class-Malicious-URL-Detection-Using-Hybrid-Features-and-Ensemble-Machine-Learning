@@ -58,7 +58,13 @@ def main():
     if args.files:
         paths = [MODEL_DIR / f for f in args.files]
     else:
-        paths = sorted(MODEL_DIR.glob("*.joblib")) + sorted(MODEL_DIR.glob("*.json"))
+        candidates = (
+            sorted(MODEL_DIR.glob("*.joblib"))
+            + sorted(MODEL_DIR.glob("*.pkl"))
+            + sorted(MODEL_DIR.glob("*.pt"))
+            + sorted(MODEL_DIR.glob("*.json"))
+        )
+        paths = [p for p in candidates if not p.name.endswith(".stale_5gb")]
 
     if not paths:
         log(f"No model files found in {MODEL_DIR} -- nothing to upload.")

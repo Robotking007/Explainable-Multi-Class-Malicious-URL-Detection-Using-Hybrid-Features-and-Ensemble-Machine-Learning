@@ -18,18 +18,28 @@ Usage:
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_PATH = Path.home() / ".kaggle" / "access_token"
-KERNEL_SLUG = "siddudavant/cyberxai-url-module-b-training"
-KERNEL_ID = 135009902  # set after first successful push -- omit (None) to create a brand-new kernel instead
+TOKEN_FILE = sys.argv[1] if len(sys.argv) > 1 else "access_token"
+USER_NAME = sys.argv[2] if len(sys.argv) > 2 else "siddudavant"
+TOKEN_PATH = Path.home() / ".kaggle" / TOKEN_FILE
+
+KERNEL_SLUG = f"{USER_NAME}/cyberxai-url-module-b-training"
+KERNEL_ID = 135009902 if USER_NAME == "siddudavant" else None
 DATASET_SOURCE = "siddudavant/cyberxai-combined-urls"
 SCRIPT_PATH = ROOT / "src" / "kaggle_kernel_train_url.py"
 
 
 def main():
-    token = TOKEN_PATH.read_text().strip()
+    if not TOKEN_PATH.exists():
+        active_token_path = Path.home() / ".kaggle" / "access_token"
+    else:
+        active_token_path = TOKEN_PATH
+
+    print(f"Reading Kaggle token from {active_token_path}...")
+    token = active_token_path.read_text().strip()
 
     from kagglehub.config import set_kaggle_api_token
     set_kaggle_api_token(token)
@@ -37,7 +47,18 @@ def main():
     from kagglehub.clients import build_kaggle_client
     from kagglesdk.kernels.types.kernels_api_service import ApiSaveKernelRequest
 
+    # Load HF_TOKEN from .env to inject into the kernel
+    hf_token = ""
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("HF_TOKEN="):
+                hf_token = line.split("=", 1)[1].strip()
+
     code = SCRIPT_PATH.read_text(encoding="utf-8")
+    if hf_token:
+        code = code.replace('HF_TOKEN = ""', f'HF_TOKEN = "{hf_token}"')
+        print(f"Injected HF_TOKEN (length: {len(hf_token)}) into kernel code for direct Hugging Face upload.")
 
     req = ApiSaveKernelRequest()
     if KERNEL_ID:

@@ -560,7 +560,63 @@ def merge_and_sort_all_datasets() -> Path:
                         who_published_flags="Harisudhan Cybersecurity URL Intelligence"
                     )
 
-    log(f"Merged total {len(dataset_records):,} unique URLs across all 14 sources.")
+    # 15. Kaggle dhrubangtalukdar (phishing_url_dataset_unique.csv)
+    p_dhru = resolve_source_file("dhrubangtalukdar_phishing_url_dataset_unique.csv", "**/phishing_url_dataset_unique.csv")
+    if p_dhru and p_dhru.exists():
+        log(f"Loading {p_dhru.name} ...")
+        with open(p_dhru, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 2:
+                    u = row[0].strip()
+                    lbl = row[1].strip()
+                    src = row[2].strip().lower() if len(row) > 2 else ""
+                    norm_cls = ("malware" if "urlhaus" in src else "phishing") if lbl == "1" else "benign"
+                    add_record(
+                        u, norm_cls, "kaggle_dhrubang",
+                        how_detected="Real-World Threat Feeds & Tranco Rank",
+                        who_published_flags="Dhrubang Talukdar Threat Intelligence"
+                    )
+
+    # 16. Kaggle zhengxian (Cleaned Dataset.csv)
+    p_zheng = resolve_source_file("zhengxian_Cleaned_Dataset.csv", "**/Cleaned Dataset.csv")
+    if p_zheng and p_zheng.exists():
+        log(f"Loading {p_zheng.name} ...")
+        with open(p_zheng, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if row and len(row) >= 2:
+                    u = row[0].strip()
+                    lbl = row[1].strip().lower()
+                    norm_cls = "phishing" if "phish" in lbl else "benign"
+                    add_record(
+                        u, norm_cls, "kaggle_zhengxian",
+                        how_detected="Zhengxian Hybrid Web Lexical Heuristics",
+                        who_published_flags="Zhengxian Web Security Benchmark"
+                    )
+
+    # 17. Kaggle somanshumahajan (urls_1.csv through urls_3.csv - 300,000 URLs with 40 features)
+    somanshu_dir = KAGGLE_CACHE_DIR / "somanshumahajan"
+    if somanshu_dir.exists():
+        somanshu_files = list(somanshu_dir.glob("**/urls_*.csv"))[:3]
+        for s_file in somanshu_files:
+            log(f"Loading {s_file.name} (Somanshu 40-feature corpus) ...")
+            with open(s_file, "r", encoding="utf-8", errors="ignore") as f:
+                reader = csv.reader(f)
+                next(reader, None)
+                for row in reader:
+                    if row and len(row) >= 2:
+                        u = row[0].strip()
+                        lbl = "phishing" if row[1].strip() == "1" else "benign"
+                        add_record(
+                            u, lbl, "kaggle_somanshu",
+                            how_detected="40-Feature Lexical & Structural Statistical Pattern Analysis",
+                            who_published_flags="Somanshu Mahajan Large-Scale URL Corpus"
+                        )
+
+    log(f"Merged total {len(dataset_records):,} unique URLs across all 17 sources.")
     log(f"Discarded invalid rows: {stats['invalid_discarded']:,} | Collisions upgraded: {stats['collision_promoted']:,}")
 
     # Sorting deterministically by type and then URL
