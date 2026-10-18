@@ -1012,17 +1012,21 @@ def metrics():
     report_dir = ROOT / "reports"
     url_metrics = _read_json(report_dir / "url_module_b_metrics.json")
     url_dl_metrics = _read_json(report_dir / "url_dl_metrics.json")
+    url_gnn_metrics = _read_json(report_dir / "url_gnn_metrics.json")
     malware_dynamic = _read_json(report_dir / "malware_module_a_dynamic_baseline_metrics.json")
     malware_static = _read_json(report_dir / "malware_module_a_static_baseline_metrics.json")
     whois_ablation = _read_json(report_dir / "url_whois_ablation_metrics.json")
 
     result = {
-        "url_module_b": None, "url_dl": None, "malware_module_a_dynamic": None,
+        "url_module_b": None, "url_dl": None, "url_gnn": None, "malware_module_a_dynamic": None,
         "malware_module_a_static": None, "whois_ablation": None,
     }
 
     if url_dl_metrics:
         result["url_dl"] = url_dl_metrics
+
+    if url_gnn_metrics:
+        result["url_gnn"] = url_gnn_metrics
 
     if url_metrics:
         result["url_module_b"] = {

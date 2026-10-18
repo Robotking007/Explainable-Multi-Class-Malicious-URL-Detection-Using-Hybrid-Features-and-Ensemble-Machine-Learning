@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -97,7 +98,7 @@ def train_gnn_pipeline(
     log(f"Training URLInfraGNN on device: {device}")
 
     # 1. Load data
-    if "combined_urls" in str(data_path) and sample_size > 0:
+    if ("combined_urls" in str(data_path) or "merged_clean_urls" in str(data_path)) and sample_size > 0:
         df = load_stratified_dataset(data_path, target_total=sample_size)
     else:
         df = pd.read_csv(data_path, nrows=sample_size if sample_size > 0 else None)
@@ -126,6 +127,7 @@ def train_gnn_pipeline(
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_raw.fillna(0.0).values)
+    url_dim = X_scaled.shape[1]
 
     urls = df[url_col].tolist()
 
@@ -143,7 +145,7 @@ def train_gnn_pipeline(
 
     # 6. Initialize GNN Model
     model = URLInfraGNN(
-        url_dim=45,
+        url_dim=url_dim,
         domain_dim=8,
         ip_dim=4,
         asn_dim=4,
@@ -258,7 +260,7 @@ def train_gnn_pipeline(
     model_path = MODELS_DIR / "url_gnn_model.pt"
     torch.save({
         "model_state_dict": model.state_dict(),
-        "url_dim": 45,
+        "url_dim": url_dim,
         "domain_dim": 8,
         "ip_dim": 4,
         "asn_dim": 4,
@@ -270,6 +272,8 @@ def train_gnn_pipeline(
 
     joblib.dump(scaler, MODELS_DIR / "url_gnn_scaler.joblib")
     joblib.dump(le, MODELS_DIR / "url_gnn_label_encoder.joblib")
+    joblib.dump(scaler, MODELS_DIR / "url_gnn_scaler.pkl")
+    joblib.dump(le, MODELS_DIR / "url_gnn_label_encoder.pkl")
 
     metrics = {
         "module": "Module B - Heterogeneous URL Infrastructure GNN",
@@ -293,6 +297,38 @@ def train_gnn_pipeline(
     with open(REPORTS_DIR / "url_gnn_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
     log(f"Saved GNN metrics -> {REPORTS_DIR / 'url_gnn_metrics.json'}")
+
+    # Auto-upload to Hugging Face Hub
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_token and (ROOT / ".env").exists():
+        for line in (ROOT / ".env").read_text().splitlines():
+            if line.startswith("HF_TOKEN="):
+                hf_token = line.split("=", 1)[1].strip()
+
+    if hf_token:
+        try:
+            from huggingface_hub import HfApi
+            api = HfApi(token=hf_token)
+            log("Syncing newly trained GNN checkpoints to Hugging Face Hub (siddudavant/cyberxai-models)...")
+            files_to_upload = [
+                ("url_gnn_model.pt", model_path),
+                ("url_gnn_scaler.joblib", MODELS_DIR / "url_gnn_scaler.joblib"),
+                ("url_gnn_label_encoder.joblib", MODELS_DIR / "url_gnn_label_encoder.joblib"),
+                ("url_gnn_scaler.pkl", MODELS_DIR / "url_gnn_scaler.pkl"),
+                ("url_gnn_label_encoder.pkl", MODELS_DIR / "url_gnn_label_encoder.pkl"),
+                ("url_gnn_metrics.json", REPORTS_DIR / "url_gnn_metrics.json"),
+            ]
+            for remote_name, local_file in files_to_upload:
+                if local_file.exists():
+                    api.upload_file(
+                        path_or_fileobj=str(local_file),
+                        path_in_repo=remote_name,
+                        repo_id="siddudavant/cyberxai-models",
+                        repo_type="model"
+                    )
+            log("Hugging Face Hub sync completed.")
+        except Exception as e:
+            log(f"Warning: Hugging Face upload skipped: {e}")
 
     return metrics
 
