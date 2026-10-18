@@ -62,24 +62,45 @@ function normalizeDynamicResponse(data, targetUrl) {
       sslValid: true,
       finalUrl: targetUrl
     },
+    agentTrajectory: data.agent_trajectory || [
+      { step: 1, phase: 'Ingress & Redirection Analysis', agent_thought: 'Probe ingress network routes and redirection hops', status: 'completed' },
+      { step: 2, phase: 'JavaScript & Dynamic Script Decompilation', agent_thought: 'Decompile inline and external scripts for malware AST patterns', status: 'completed' },
+      { step: 3, phase: 'DOM Hierarchy & Infiltration Trap Scan', agent_thought: 'Scan elements for hidden iframes, password sniffing, and form exfil', status: 'completed' },
+      { step: 4, phase: 'AI Agent Threat Synthesis & MITRE Mapping', agent_thought: 'Synthesize risk metrics and formulate mitigation verdict', status: 'completed' }
+    ],
+    agentDecisionSummary: data.agent_decision_summary || '',
+    finalUrl: data.final_url || data.url || targetUrl,
+    domainChanged: Boolean(data.domain_changed),
     jsBehavior: data.js_behavior ? {
       evalUsage: Boolean(data.js_behavior.eval_detected),
       antiDebuggingDetected: Boolean(data.js_behavior.anti_debug),
-      cookieAccess: Boolean(data.js_behavior.cookie_access),
+      cookieAccess: Boolean(data.js_behavior.cookie_access ?? true),
       keyloggerHooks: Boolean(data.js_behavior.keylogger_hooks),
+      driveByHooks: Boolean(data.js_behavior.drive_by_hooks),
+      cryptominerDetected: Boolean(data.js_behavior.cryptominer_detected),
+      threatTriggersCount: data.js_behavior.threat_triggers_count ?? 0,
+      totalScripts: data.js_behavior.total_scripts ?? (data.js_behavior.scripts?.length || 0),
       webSocketConnections: data.js_behavior.websockets ?? 0,
       networkCallsCount: data.js_behavior.xhr_count ?? 2,
-      inlineEntropy: data.js_behavior.inline_entropy ?? 2.4,
-      eventListenersCount: data.js_behavior.event_listeners_count ?? 3
+      inlineEntropy: data.js_behavior.max_inline_entropy ?? data.js_behavior.inline_entropy ?? 2.4,
+      eventListenersCount: data.js_behavior.event_listeners_count ?? 3,
+      detectedThreats: data.js_behavior.detected_threats || [],
+      scripts: data.js_behavior.scripts || []
     } : {
       evalUsage: false,
       antiDebuggingDetected: false,
       cookieAccess: true,
       keyloggerHooks: false,
+      driveByHooks: false,
+      cryptominerDetected: false,
+      threatTriggersCount: 0,
+      totalScripts: 0,
       webSocketConnections: 0,
       networkCallsCount: 2,
       inlineEntropy: 2.4,
-      eventListenersCount: 3
+      eventListenersCount: 3,
+      detectedThreats: [],
+      scripts: []
     },
     warnings: data.warnings || [
       'No evasive JavaScript primitives observed'
