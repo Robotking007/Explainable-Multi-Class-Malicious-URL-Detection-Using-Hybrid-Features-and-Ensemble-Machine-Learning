@@ -156,6 +156,7 @@ export const DynamicAnalysis = () => {
   const [error, setError] = useState(null);
   const [dynamicResult, setDynamicResult] = useState(null);
   const [activeTab, setActiveTab] = useState('agent'); // 'agent' | 'dom' | 'browser' | 'js' | 'warnings'
+  const [viewportMode, setViewportMode] = useState('render'); // 'render' | 'mockup' | 'source'
   const [selectedNode, setSelectedNode] = useState(null);
   const [domFilter, setDomFilter] = useState('all');
 
@@ -963,75 +964,148 @@ export const DynamicAnalysis = () => {
                     <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block" />
                     <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
                     <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
-                    <span className="text-[11px] font-mono text-slate-400 ml-2">CyberX Isolated Chromium Sandbox</span>
+                    <span className="text-[11px] font-mono text-slate-400 ml-2 hidden sm:inline">CyberX Isolated Chromium Sandbox</span>
                   </div>
 
                   {/* Browser Address Bar */}
-                  <div className="flex-1 max-w-xl mx-auto flex items-center gap-2 bg-[#060a12] border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200">
-                    <Lock className={`w-3.5 h-3.5 ${dynamicResult.browserDetails?.sslValid ? 'text-emerald-400' : 'text-rose-400'}`} />
-                    <span className="truncate flex-1">{dynamicResult.browserDetails?.finalUrl || dynamicResult.url}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300">
+                  <div className="flex-1 max-w-xl mx-auto flex items-center gap-2 bg-[#060a12] border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-200 w-full">
+                    <Lock className={`w-3.5 h-3.5 flex-shrink-0 ${dynamicResult.browserDetails?.sslValid ? 'text-emerald-400' : 'text-rose-400'}`} />
+                    <span className="truncate flex-1 font-semibold">{dynamicResult.finalUrl || dynamicResult.browserDetails?.finalUrl || dynamicResult.url}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 flex-shrink-0">
                       {dynamicResult.browserDetails?.finalStatus || 200} OK
                     </span>
+                    <a
+                      href={dynamicResult.finalUrl || dynamicResult.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open URL in external tab"
+                      className="text-slate-400 hover:text-cyan-300 ml-1 flex-shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
                   </div>
 
-                  <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
-                    <span className="soc-badge-cyan text-[10px]">HEADLESS 1280x800</span>
+                  {/* Mode Selector Buttons */}
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono flex-shrink-0">
+                    <button
+                      onClick={() => setViewportMode('render')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+                        viewportMode === 'render'
+                          ? 'bg-cyan-950 text-cyan-300 border border-cyan-700'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                      }`}
+                    >
+                      Live Web Viewport
+                    </button>
+                    <button
+                      onClick={() => setViewportMode('mockup')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+                        viewportMode === 'mockup'
+                          ? 'bg-cyan-950 text-cyan-300 border border-cyan-700'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                      }`}
+                    >
+                      Forensic Form
+                    </button>
+                    <button
+                      onClick={() => setViewportMode('source')}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+                        viewportMode === 'source'
+                          ? 'bg-cyan-950 text-cyan-300 border border-cyan-700'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                      }`}
+                    >
+                      HTML Source
+                    </button>
                   </div>
                 </div>
 
-                {/* Sandboxed Page Viewport Simulation */}
-                <div className="p-8 bg-[#040711] min-h-[380px] flex items-center justify-center relative">
-                  <div className="absolute top-3 right-4 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-[10px] font-mono text-amber-300 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3 h-3" />
-                    <span>ISOLATED SIMULATED VIEWPORT • NO LOCAL JAVASCRIPT EXECUTION</span>
-                  </div>
-
-                  {/* Rendered Mockup of Target Site */}
-                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#0a0f1d] border border-slate-800/80 shadow-xl space-y-4 font-mono">
-                    <div className="text-center space-y-1 pb-3 border-b border-slate-800">
-                      <div className="w-10 h-10 mx-auto rounded-xl bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-lg">
-                        {dynamicResult.url.includes('microsoft') ? 'M' : 'S'}
+                {/* VIEWPORT BODY */}
+                {viewportMode === 'render' && (
+                  <div className="relative w-full h-[540px] bg-slate-950 flex flex-col">
+                    <div className="bg-[#070b14] px-4 py-2 border-b border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span className="text-slate-300 font-semibold">Detonated Sandbox Web Environment</span>
                       </div>
-                      <h4 className="text-sm font-bold text-slate-100">{dynamicResult.domProfile?.pageTitle || 'Authentication Gateway'}</h4>
-                      <p className="text-[10px] text-slate-400">Security Verification Required</p>
+                      <span className="text-amber-400 text-[10px]">
+                        Scripts Disarmed for Analyst Safety • CSS & HTML Rendered
+                      </span>
                     </div>
 
-                    {dynamicResult.domProfile?.formsCount > 0 ? (
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400">Corporate Identity / Email</span>
-                          <input
-                            type="text"
-                            placeholder="user@organization.com"
-                            disabled
-                            className="w-full bg-[#060a12] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400">Security Token / Password</span>
-                          <input
-                            type="password"
-                            placeholder="••••••••••••"
-                            disabled
-                            className="w-full bg-[#060a12] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400"
-                          />
-                        </div>
-                        <button
-                          disabled
-                          className="w-full py-2 rounded-lg bg-cyan-600/50 text-cyan-200 text-xs font-bold cursor-not-allowed"
-                        >
-                          Verify Identity & Renew Access
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="py-6 text-center text-slate-400 text-xs space-y-2">
-                        <Globe className="w-8 h-8 text-cyan-400 mx-auto opacity-60" />
-                        <p>Web service loaded successfully without interactive credential submission prompts.</p>
-                      </div>
-                    )}
+                    <iframe
+                      srcDoc={
+                        dynamicResult.safeHtml ||
+                        `<!DOCTYPE html><html><body style="font-family:sans-serif;background:#0f172a;color:#f8fafc;padding:40px;text-align:center;"><h2>Web Service Detonated</h2><p>Target: ${dynamicResult.finalUrl || dynamicResult.url}</p><p>Status: HTTP 200 OK</p></body></html>`
+                      }
+                      sandbox="allow-same-origin allow-forms"
+                      title="Detonated Website Sandbox Preview"
+                      className="w-full flex-1 border-0 bg-white"
+                    />
                   </div>
-                </div>
+                )}
+
+                {viewportMode === 'mockup' && (
+                  <div className="p-8 bg-[#040711] min-h-[420px] flex items-center justify-center relative">
+                    <div className="absolute top-3 right-4 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-[10px] font-mono text-amber-300 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>ISOLATED SIMULATED VIEWPORT • NO LOCAL JAVASCRIPT EXECUTION</span>
+                    </div>
+
+                    {/* Rendered Mockup of Target Site */}
+                    <div className="w-full max-w-md p-6 rounded-2xl bg-[#0a0f1d] border border-slate-800/80 shadow-xl space-y-4 font-mono">
+                      <div className="text-center space-y-1 pb-3 border-b border-slate-800">
+                        <div className="w-10 h-10 mx-auto rounded-xl bg-cyan-950 border border-cyan-500/40 flex items-center justify-center text-cyan-300 font-bold text-lg">
+                          {dynamicResult.url.includes('microsoft') ? 'M' : 'S'}
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-100">{dynamicResult.domProfile?.pageTitle || 'Authentication Gateway'}</h4>
+                        <p className="text-[10px] text-slate-400">Security Verification Required</p>
+                      </div>
+
+                      {dynamicResult.domProfile?.formsCount > 0 ? (
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-400">Corporate Identity / Email</span>
+                            <input
+                              type="text"
+                              placeholder="user@organization.com"
+                              disabled
+                              className="w-full bg-[#060a12] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-slate-400">Security Token / Password</span>
+                            <input
+                              type="password"
+                              placeholder="••••••••••••"
+                              disabled
+                              className="w-full bg-[#060a12] border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400"
+                            />
+                          </div>
+                          <button
+                            disabled
+                            className="w-full py-2 rounded-lg bg-cyan-600/50 text-cyan-200 text-xs font-bold cursor-not-allowed"
+                          >
+                            Verify Identity & Renew Access
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="py-6 text-center text-slate-400 text-xs space-y-2">
+                          <Globe className="w-8 h-8 text-cyan-400 mx-auto opacity-60" />
+                          <p>Web service loaded successfully without interactive credential submission prompts.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {viewportMode === 'source' && (
+                  <div className="p-4 bg-[#050811] max-h-[500px] overflow-y-auto font-mono text-xs">
+                    <pre className="text-cyan-200/90 whitespace-pre-wrap leading-relaxed">
+                      {dynamicResult.safeHtml || '<!-- No raw source available for offline target -->'}
+                    </pre>
+                  </div>
+                )}
               </div>
 
               {/* Multi-Hop Navigation & Redirect Chain */}

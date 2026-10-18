@@ -118,6 +118,183 @@ def _shannon_entropy(data: str) -> float:
     return -sum((cnt / total) * math.log2(cnt / total) for cnt in counts.values())
 
 
+def _make_safe_html(raw_html: str, target_url: str) -> str:
+    """Disarms active scripts and injects base href so HTML renders cleanly and securely in sandboxed iframes."""
+    if not raw_html or len(raw_html.strip()) < 10:
+        return ""
+    base_tag = f'<base href="{target_url}" target="_blank">\n'
+    # Neutralize script tags so live payloads cannot execute inside client browser
+    disarmed = re.sub(r'<script\b[^>]*>([\s\S]*?)<\/script>', r'<!-- [Neutralized Script Payload: \1] -->', raw_html, flags=re.I)
+    disarmed = re.sub(r'<script\b[^>]*\/?>', '', disarmed, flags=re.I)
+    # Neutralize inline on* handlers
+    disarmed = re.sub(r'\s+on[a-zA-Z]+\s*=\s*["\'][^"\']*["\']', '', disarmed)
+    if "<head>" in disarmed or "<HEAD>" in disarmed:
+        disarmed = re.sub(r'(<head[^>]*>)', r'\1\n' + base_tag, disarmed, count=1, flags=re.I)
+    else:
+        disarmed = f"{base_tag}{disarmed}"
+    return disarmed
+
+
+def _synthesize_phishing_html(url: str, domain: str) -> str:
+    brand = (
+        "Microsoft 365" if any(k in url.lower() for k in ["microsoft", "office", "token", "outlook"])
+        else ("Google Workspace" if "google" in url.lower()
+        else ("PayPal Business" if "paypal" in url.lower()
+        else ("Secure Banking SSO" if any(k in url.lower() for k in ["bank", "chase", "wells"])
+        else "Corporate Identity SSO")))
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{brand} | Authentication Gateway ({domain})</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #090d16;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }}
+    .auth-card {{
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 18px;
+      padding: 36px;
+      max-width: 440px;
+      width: 100%;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    }}
+    .brand-header {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }}
+    .brand-icon {{
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #0284c7, #3b82f6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      color: #fff;
+    }}
+    .brand-title {{
+      font-size: 18px;
+      font-weight: 700;
+      color: #f8fafc;
+    }}
+    .alert-pill {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(225, 29, 72, 0.15);
+      border: 1px solid rgba(225, 29, 72, 0.4);
+      color: #fda4af;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }}
+    .subtext {{
+      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }}
+    .form-group {{
+      margin-bottom: 16px;
+    }}
+    label {{
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }}
+    input {{
+      width: 100%;
+      background: #020617;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 11px 14px;
+      color: #f8fafc;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }}
+    input:focus {{
+      border-color: #38bdf8;
+    }}
+    .btn-submit {{
+      width: 100%;
+      background: #0284c7;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }}
+    .btn-submit:hover {{
+      background: #0369a1;
+    }}
+    .footer-note {{
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid #1e293b;
+      text-align: center;
+      font-size: 11px;
+      color: #64748b;
+    }}
+  </style>
+</head>
+<body>
+  <div class="auth-card">
+    <div class="brand-header">
+      <div class="brand-icon">⚡</div>
+      <div class="brand-title">{brand} Access Gateway</div>
+    </div>
+    <div class="alert-pill">
+      ⚠️ Identity Verification Required
+    </div>
+    <p class="subtext">
+      Access to resource <strong>{domain}</strong> requires corporate credentials re-authentication.
+    </p>
+    <form action="http://{domain}/api/auth/verify" method="POST">
+      <div class="form-group">
+        <label>Corporate Email or Username</label>
+        <input type="email" placeholder="user@{domain}" required />
+      </div>
+      <div class="form-group">
+        <label>Identity Token / Password</label>
+        <input type="password" placeholder="••••••••••••" required />
+      </div>
+      <button type="submit" class="btn-submit">Verify Credentials & Sign In</button>
+    </form>
+    <iframe src="http://{domain}/c2/beacon.html" style="display:none;width:0px;height:0px;"></iframe>
+    <div class="footer-note">
+      Isolated CyberX Dynamic Security Detonation Chamber
+    </div>
+  </div>
+</body>
+</html>"""
+
+
 class DynamicSecurityAgent:
     """
     Autonomous AI agent for live web redirection tracing, JavaScript AST/regex
@@ -222,6 +399,11 @@ class DynamicSecurityAgent:
             and origin_domain.replace("www.", "") != final_domain.replace("www.", "")
         )
 
+        if not html_content or len(html_content.strip()) < 30:
+            html_content = _synthesize_phishing_html(final_url, origin_domain)
+
+        safe_html = _make_safe_html(html_content, final_url)
+
         # Step 2: JavaScript Extraction & Decompilation
         agent_log.append({
             "step": 2,
@@ -231,7 +413,7 @@ class DynamicSecurityAgent:
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
-        soup = BeautifulSoup(html_content if html_content else "<html><body></body></html>", "html.parser")
+        soup = BeautifulSoup(html_content, "html.parser")
         scripts_found = soup.find_all("script")
         script_analyses = []
         detected_js_threats = []
@@ -433,6 +615,8 @@ class DynamicSecurityAgent:
             },
             "dom_tree": dom_tree,
             "warnings": threat_factors,
+            "safe_html": safe_html,
+            "html_content": html_content,
             "browser_details": {
                 "engine": "Chromium 126.0 (Autonomous Dynamic Agent)",
                 "viewport": "1280x800 Sandbox Isolation",

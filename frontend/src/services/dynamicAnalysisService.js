@@ -69,6 +69,7 @@ function normalizeDynamicResponse(data, targetUrl) {
       { step: 4, phase: 'AI Agent Threat Synthesis & MITRE Mapping', agent_thought: 'Synthesize risk metrics and formulate mitigation verdict', status: 'completed' }
     ],
     agentDecisionSummary: data.agent_decision_summary || '',
+    safeHtml: data.safe_html || data.html_content || '',
     finalUrl: data.final_url || data.url || targetUrl,
     domainChanged: Boolean(data.domain_changed),
     jsBehavior: data.js_behavior ? {
