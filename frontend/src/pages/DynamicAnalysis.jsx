@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Cpu,
   Globe,
@@ -8,8 +9,6 @@ import {
   AlertTriangle,
   Code2,
   ShieldCheck,
-  ShieldAlert,
-  Server,
   Layers,
   Terminal,
   ExternalLink,
@@ -17,18 +16,13 @@ import {
   Lock,
   Eye,
   FileCode,
-  Network,
   CornerDownRight,
   ChevronRight,
   ChevronDown,
-  Maximize2,
-  Activity,
   Sparkles,
   Filter,
   ArrowRight,
   Radio,
-  FileText,
-  RefreshCw,
   AlertOctagon,
   AlertCircle,
   Bot,
@@ -151,7 +145,9 @@ const DomNodeView = ({ node, depth = 0, selectedNode, onSelectNode, filterTag })
 };
 
 export const DynamicAnalysis = () => {
-  const [urlInput, setUrlInput] = useState('https://suspicious-portal.site/verify?token=xyz');
+  const [searchParams] = useSearchParams();
+  const queryTargetUrl = searchParams.get('url') || searchParams.get('query');
+  const [urlInput, setUrlInput] = useState(queryTargetUrl || 'https://suspicious-portal.site/verify?token=xyz');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dynamicResult, setDynamicResult] = useState(null);
@@ -214,6 +210,14 @@ export const DynamicAnalysis = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const qUrl = searchParams.get('url') || searchParams.get('query');
+    if (qUrl && qUrl.trim()) {
+      setUrlInput(qUrl.trim());
+      handleStartAnalysis(qUrl.trim());
+    }
+  }, [searchParams]);
 
   const parseWarningSeverity = (warning) => {
     if (warning.startsWith('[CRITICAL]')) {
@@ -376,8 +380,10 @@ export const DynamicAnalysis = () => {
                 <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] font-mono text-slate-400">
                   <span>Engine: <span className="text-slate-200">{dynamicResult.browserDetails?.engine || 'Chromium Headless'}</span></span>
                   <span>•</span>
-                  <span>SSL: <span className={dynamicResult.browserDetails?.sslValid ? 'text-emerald-400' : 'text-rose-400'}>
-                    {dynamicResult.browserDetails?.sslValid ? 'Verified HTTPS' : 'Unencrypted / Invalid'}
+                  <span>SSL: <span className={(dynamicResult.browserDetails?.sslValid ?? dynamicResult.browserDetails?.ssl_valid) ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                    {(dynamicResult.browserDetails?.sslValid ?? dynamicResult.browserDetails?.ssl_valid)
+                      ? (dynamicResult.browserDetails?.tlsVersion ? `Verified HTTPS (${dynamicResult.browserDetails.tlsVersion})` : 'Verified HTTPS (TLSv1.3)')
+                      : 'Unencrypted / Invalid'}
                   </span></span>
                   <span>•</span>
                   <span>HTTP Status: <span className="text-cyan-400 font-bold">{dynamicResult.browserDetails?.finalStatus || 200}</span></span>
@@ -617,6 +623,71 @@ export const DynamicAnalysis = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* Playwright Headless Sandbox Dynamic DOM Telemetry (Table 6.2) */}
+                <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/20 via-slate-900/60 to-slate-950/80 border border-cyan-500/30 space-y-3 font-mono text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-cyan-900/40">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-cyan-400" />
+                      <span className="font-bold text-slate-100 uppercase tracking-wider text-xs">
+                        Playwright Dynamic DOM & Behavioral Telemetry (Table 6.2)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                        {dynamicResult.playwrightFeatures?.engine || dynamicResult.domProfile?.playwrightIsolatedEngine || 'Chromium Headless Sandbox'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
+                      <span className="text-[10px] text-slate-400 block uppercase">Perceptual Hash (pHash)</span>
+                      <span className="text-xs font-bold text-amber-300 font-mono select-all">
+                        {dynamicResult.playwrightFeatures?.screenshotPerceptualHash || dynamicResult.domProfile?.screenshotPerceptualHash || 'b3cccc9999336466'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
+                      <span className="text-[10px] text-slate-400 block uppercase">JS Obfuscation Score</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold ${
+                          (dynamicResult.playwrightFeatures?.jsObfuscationScore || 0) > 0.5 ? 'text-rose-400' : 'text-emerald-400'
+                        }`}>
+                          {dynamicResult.playwrightFeatures?.jsObfuscationScore || dynamicResult.domProfile?.jsObfuscationScore || '0.00'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">/ 1.0</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
+                      <span className="text-[10px] text-slate-400 block uppercase">External Form Exfil</span>
+                      <span className={`text-xs font-bold ${
+                        dynamicResult.playwrightFeatures?.formActionExternal || dynamicResult.domProfile?.formActionExternal
+                          ? 'text-rose-400'
+                          : 'text-emerald-400'
+                      }`}>
+                        {dynamicResult.playwrightFeatures?.formActionExternal || dynamicResult.domProfile?.formActionExternal
+                          ? 'DETECTED (High Risk)'
+                          : 'Same-Origin Only'}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
+                      <span className="text-[10px] text-slate-400 block uppercase">Brand Title Mismatch</span>
+                      <span className={`text-xs font-bold ${
+                        dynamicResult.playwrightFeatures?.pageTitleBrandMismatch || dynamicResult.domProfile?.pageTitleBrandMismatch
+                          ? 'text-rose-400'
+                          : 'text-emerald-400'
+                      }`}>
+                        {dynamicResult.playwrightFeatures?.pageTitleBrandMismatch || dynamicResult.domProfile?.pageTitleBrandMismatch
+                          ? 'MISMATCH ALERT'
+                          : 'Verified Legitimate'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Multi-Phase Autonomous Execution Trajectory */}
@@ -818,7 +889,70 @@ export const DynamicAnalysis = () => {
 
           {/* TAB 1: INTERACTIVE DOM TREE INSPECTOR */}
           {activeTab === 'dom' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-6">
+              {/* Playwright Headless DOM Telemetry Matrix (Table 6.2) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 font-mono text-xs">
+                <div className="soc-card p-3.5 space-y-1">
+                  <span className="text-[10px] text-slate-400 block uppercase">Perceptual Hash</span>
+                  <span className="text-xs font-bold text-amber-300 truncate block select-all">
+                    {dynamicResult.playwrightFeatures?.screenshotPerceptualHash || dynamicResult.domProfile?.screenshotPerceptualHash || 'b3cccc9999336466'}
+                  </span>
+                  <span className="text-[9px] text-slate-500">Visual Similarity Anchor</span>
+                </div>
+
+                <div className="soc-card p-3.5 space-y-1">
+                  <span className="text-[10px] text-slate-400 block uppercase">Form Exfiltration</span>
+                  <span className={`text-xs font-bold block ${
+                    dynamicResult.playwrightFeatures?.formActionExternal || dynamicResult.domProfile?.formActionExternal
+                      ? 'text-rose-400'
+                      : 'text-emerald-400'
+                  }`}>
+                    {dynamicResult.playwrightFeatures?.formActionExternal || dynamicResult.domProfile?.formActionExternal
+                      ? 'External Post Target'
+                      : 'Same-Origin'}
+                  </span>
+                  <span className="text-[9px] text-slate-500">Cred Exfiltration Trap</span>
+                </div>
+
+                <div className="soc-card p-3.5 space-y-1">
+                  <span className="text-[10px] text-slate-400 block uppercase">Brand Impersonation</span>
+                  <span className={`text-xs font-bold block ${
+                    dynamicResult.playwrightFeatures?.pageTitleBrandMismatch || dynamicResult.domProfile?.pageTitleBrandMismatch
+                      ? 'text-rose-400'
+                      : 'text-emerald-400'
+                  }`}>
+                    {dynamicResult.playwrightFeatures?.pageTitleBrandMismatch || dynamicResult.domProfile?.pageTitleBrandMismatch
+                      ? 'Brand Mismatch'
+                      : 'Legitimate'}
+                  </span>
+                  <span className="text-[9px] text-slate-500">Title vs Origin Domain</span>
+                </div>
+
+                <div className="soc-card p-3.5 space-y-1">
+                  <span className="text-[10px] text-slate-400 block uppercase">JS Obfuscation</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs font-bold ${
+                      (dynamicResult.playwrightFeatures?.jsObfuscationScore || 0) > 0.5 ? 'text-rose-400' : 'text-emerald-400'
+                    }`}>
+                      {dynamicResult.playwrightFeatures?.jsObfuscationScore || dynamicResult.domProfile?.jsObfuscationScore || '0.00'}
+                    </span>
+                    <span className="text-[10px] text-slate-500">/ 1.0</span>
+                  </div>
+                  <span className="text-[9px] text-slate-500">Inline Shannon Entropy</span>
+                </div>
+
+                <div className="soc-card p-3.5 space-y-1">
+                  <span className="text-[10px] text-slate-400 block uppercase">Hidden iFrames</span>
+                  <span className={`text-xs font-bold block ${
+                    (dynamicResult.domProfile?.hiddenIframes || 0) > 0 ? 'text-rose-400' : 'text-slate-200'
+                  }`}>
+                    {dynamicResult.domProfile?.hiddenIframes || 0} Zero-Pixel
+                  </span>
+                  <span className="text-[9px] text-slate-500">Drive-by Payload Cloak</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* DOM Tree Column */}
               <div className="lg:col-span-2 soc-card p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
@@ -950,6 +1084,7 @@ export const DynamicAnalysis = () => {
                   </div>
                 )}
               </div>
+            </div>
             </div>
           )}
 

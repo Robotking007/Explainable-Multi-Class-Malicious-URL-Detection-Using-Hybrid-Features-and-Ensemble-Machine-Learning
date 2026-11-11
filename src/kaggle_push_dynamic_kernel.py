@@ -8,12 +8,15 @@ Usage:
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_PATH = Path.home() / ".kaggle" / "access_token"
-KERNEL_SLUG = "siddudavant/cyberxai-dynamic-malware-training"
-KERNEL_ID = None  # set after first successful push, to update rather than re-create
+TOKEN_FILE = sys.argv[1] if len(sys.argv) > 1 else "access_token_3"
+USER_NAME = sys.argv[2] if len(sys.argv) > 2 else "robotking007"
+TOKEN_PATH = Path.home() / ".kaggle" / TOKEN_FILE
+KERNEL_SLUG = f"{USER_NAME}/cyberxai-dynamic-malware-training"
+KERNEL_ID = None
 DATASET_SOURCE = "siddudavant/cyberxai-dynamic-malware"
 SCRIPT_PATH = ROOT / "src" / "kaggle_kernel_train_dynamic_malware.py"
 

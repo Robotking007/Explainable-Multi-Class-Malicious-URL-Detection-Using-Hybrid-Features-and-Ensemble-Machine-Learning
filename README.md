@@ -1,520 +1,522 @@
-# Explainable Multi-Class Malicious URL Detection Using Hybrid Features and Deep Learning
+# CyberXAI — Explainable Multi-Class Malicious URL & Malware Detection Platform
 
-An explainable threat intelligence system with four trained modules: a Deep Learning URL classifier
-(`HybridURLNet`: benign / phishing / defacement / malware) and three malware classifiers (static PE-features,
-dynamic memory-forensics, and API-call-sequence family classification). Every prediction comes with a
-sub-second neural gradient attribution explanation. Training is supported both locally with parallelized
-mini-batch streaming and on Kaggle GPU cloud compute — see [Kaggle infrastructure](#kaggle-infrastructure--compute)
-below.
+**CyberXAI** is an end-to-end, explainable cybersecurity threat intelligence platform combining **deep learning (`HybridURLNet`)**, **heterogeneous graph attention networks (`URLInfraGNN`)**, **classical soft-voting ensembles**, **malware forensics classifiers** (memory dumps, static PE headers, and Windows API call sequences), an **autonomous Playwright dynamic browser sandbox agent**, **CrowdStrike Falcon Sandbox (Hybrid Analysis v2)** integration, and a **Google Gemini 3.5 Flash SOC Analyst Copilot** behind a **React 19 + FastAPI** workbench.
 
-## Repository layout
-
-```
-Dataset/                          training data (gitignored — multi-GB, never committed; see below)
-models/                           trained model/encoder/vectorizer artifacts (.joblib, .json) — gitignored,
-                                   auto-downloaded from HF Hub on demand by model_registry.py
-reports/                          run logs and metrics (.json) for each module
-
-src/
-  url_pipeline/
-    features.py                    lexical, host, content-keyword, structural, statistical
-                                    features + char n-gram TF-IDF (chunked for memory safety at scale)
-    whois_features.py              live WHOIS lookup (domain age/registration/privacy) — single-domain,
-                                    used for ablation studies + live API predictions, not bulk training
-    asn_features.py                live DNS + Team Cymru ASN/IP-prefix lookup — same scope as WHOIS
-    whois_bulk_enrich.py           local checkpointed bulk WHOIS enrichment (superseded by the Kaggle chain)
-    asn_bulk_enrich.py             local checkpointed bulk ASN enrichment (DNS + batched Cymru lookups)
-    build_combined_dataset.py      merges ~20 URL sources into Dataset/combined_urls.csv
-    train.py                       local reference copy of the training pipeline (mirrors the Kaggle kernel;
-                                    NOT used for actual training — see Kaggle infrastructure below)
-    dl_model.py                    HybridURLNet: PyTorch Tabular Residual Neural Network (<50k parameters)
-    train_dl.py                    PyTorch mini-batch training with class-weighted cross-entropy (OOM-safe)
-    explain_dl.py                  fast gradient-based SHAP explainability for the Deep Learning model
-    explain.py                     SHAP-based per-URL prediction + live WHOIS/ASN host-intel lookup (Module D)
-    dynamic_escalation.py          Module C: headless-browser redirect/DOM/script analysis for low-confidence URLs
-    train_shap_surrogate.py        fast shallow-RF surrogate used only for SHAP speed (see below)
-    run_whois_ablation.py          reproduces a WHOIS-features ablation study at a bounded sample size
-
-  malware_pipeline/
-    train_dynamic_baseline.py      Module A: CIC-MalMem-2022 memory-forensics RF+XGBoost baseline
-    train_static_baseline.py       Module A': BODMAS+EMBER static PE-feature RF+XGBoost baseline
-    train_api_sequence_baseline.py Module A'': MalAPI2019 API-call-sequence family classifier
-    explain.py / explain_static.py SHAP explanation for the dynamic / static malware modules
-
-  api/
-    main.py                        FastAPI backend serving all four modules + the dashboard
-    chatbot.py                     Gemini-backed scan explainer (hidden behind a feature flag)
-
-  model_registry.py                downloads a model from HF Hub if missing locally, no-op otherwise
-  fetch_abusech_data.py            pulls ThreatFox + URLhaus bulk exports (authenticated)
-
-  kaggle_*.py                      Kaggle kernel push/watch/chain scripts — see Kaggle infrastructure below
-
-frontend/
-  code.html                        the dashboard (Threat Analyzer + 3D Visualizer tabs, Host Intelligence panel)
-```
-
-## Module status
-
-### Module B — URL classifier (`src/url_pipeline/`)
-
-**Training data:** `Dataset/combined_urls.csv`, merged from ~20 public sources (Kaggle datasets,
-Hugging Face datasets, PhishTank's live feed, abuse.ch ThreatFox/URLhaus) by
-`build_combined_dataset.py`, with explicit source-priority resolution for the small fraction of
-URLs that appear in more than one source under a different label (never silently dropped).
-
-**Current size: 20,946,068 rows** — benign 11,292,992 / phishing 9,264,267 / defacement 201,997 /
-malware 186,812. Cross-source label disagreement (the same URL appearing under a different class in
-two sources) affects ~2.16% of unique URLs — resolved by the priority order below, never dropped.
-
-<details>
-<summary><strong>Full list of merged sources (click to expand)</strong></summary>
-
-Merged in explicit priority order (highest first — wins on label disagreement):
-
-1. `verified_online.csv` — PhishTank's live-verified feed (phishing-only, human-verified)
-2. `file.csv.txt` — abuse.ch URLhaus dump (malware-only, curated threat feed)
-3. `MUD_malicious_urls_2026_V2.csv` — newer (2026), large 4-class corpus
-4. `malicious_phish.csv` — original corpus (2021/2022 vintage), 4-class
-5. `merged_urls_dataset.csv` — 3.9M rows total, 3.37M out-of-taxonomy "adult" rows dropped
-6. `PhishVN.../dataset_url.csv` — PhishVN v3.1.0 (Vietnamese phishing dataset)
-7. `zhengxian_12M_urls.csv` — 12M-row Kaggle set (legitimate/phishing)
-8. `somanshumahajan_6M_urls.csv` — 6.1M-row Kaggle set (0=benign/1=phishing, label polarity verified by URL sampling)
-9. `kmack_phishing_urls.csv` — HF dataset, 708,820 rows (0=benign/1=phishing, verified)
-10. `Malicious URL v3.csv` / `Malicious URL Detection.csv` — direct 4-class match
-11. `ASA_Phishing_URL_Dataset.csv`, `URL dataset.csv`, `StealthPhisher2025.csv` — legitimate/phishing
-12. `Phishing URLs.csv` — phishing-only
-13. `Dataset.csv`, `DomainGuard-50K.csv`, `dataset2.csv` — binary 0=benign/1=phishing (verified)
-14. `url_features_extracted1.csv`, `PhiUSIIL_Phishing_URL_Dataset.csv` — binary, **inverted** polarity
-    (1=benign/0=phishing) — verified by sampling; the opposite convention from #13's sources, so
-    getting this backwards would have silently mislabeled hundreds of thousands of rows
-15. `balanced_urls.csv`, `Dataset I.csv`, `Dataset II.csv` — ambiguous "benign vs malicious" sources;
-    only the benign side is usable (the malicious side doesn't say which of phishing/defacement/
-    malware it is, so guessing would fabricate a label)
-16. `phreshphish_urls.csv` — HF `phreshphish/phreshphish`, 666,315 rows collected 2025-2026 (fresh,
-    out-of-time real phishing/benign URL+HTML pairs; only url/label used, HTML not downloaded)
-17. `naren1704_urls.csv` — HF `Naren1704/phishing-dataset`'s `urls.json` config, 835,697 rows (a
-    compilation of a Kaggle 800K-URL set plus JPCERT/PhishTank/OpenPhish-derived sources; heavy
-    overlap with sources above is expected and harmless, resolved by the same dedup step)
-18. `threatfox_full.csv` / refreshed `file.csv.txt` — abuse.ch ThreatFox bulk export (authenticated,
-    `fetch_abusech_data.py`), malware-only
-19. `satyammishra_1.5M_benign_domains.csv` — capped sample (from 13.6M available) of real registered
-    business websites, no label column, safely all-benign by construction
-
-One candidate source (`Phishing Website Detection Dataset/`, 6.5M headerless plaintext URLs) was
-investigated and deliberately **excluded**: sampling its "malign" file found 14,641 lines referencing
-amazon.com/google.com/wikipedia.org/microsoft.com plus adult-content URLs in both classes — strong
-evidence it's a mislabeled adult-content classifier, not a phishing/malware corpus.
-
-</details>
-
-**Pipeline:** 45 hybrid engineered features (lexical + host + content-keyword + structural + statistical,
-computed directly from the URL string via `features.py`), fed through **`HybridURLNet`** — a PyTorch
-Tabular Residual Deep Neural Network (128-dimension input projection, residual block with skip connections,
-batch normalization, SiLU, dropout, 48,324 trainable parameters). Trained via streaming mini-batch
-`DataLoader`s with balanced class-weighted Cross-Entropy loss (eliminating the memory explosion of 40M-row
-synthetic SMOTE), supporting dynamic INT8 quantization for ultra-low power inference. Produces exact
-feature attributions via Neural Gradient Attribution in <0.5s.
-
-<details open>
-<summary><strong>Comprehensive In-Depth Feature Reference (All 45 Hybrid Features + 10 Host Intel Features)</strong></summary>
-
-All 45 hybrid URL features are extracted directly from the raw URL string by `extract_features_row()` in `src/url_pipeline/features.py`. The extraction is completely static (no live HTTP network fetch or page download is required), making it deterministic, zero-network-overhead, and scalable to millions of rows.
+Every URL and malware verdict is paired with sub-second quantitative explainability (**GradientSHAP**, **Layer-2 GAT Attention $\alpha_{ij}$**, and **TreeSHAP**), while large model checkpoints are hosted securely in a **private Hugging Face Model Hub repository** ([`siddudavant/cyberxai-models`](https://huggingface.co/siddudavant/cyberxai-models)) with automatic on-demand hydration via [`src/model_registry.py`](src/model_registry.py).
 
 ---
 
-### Group 1: Lexical Features (15 Features)
+## Table of Contents
 
-Lexical features capture character-level distributions, string lengths, and syntax oddities characteristic of obfuscated or hastily generated malicious URLs.
+1. [Repository Layout](#repository-layout)
+2. [Experimental Results & Comparison Tables](#experimental-results--comparison-tables)
+   - [URL Classification Models Comparison](#1-url-classification-models-comparison)
+   - [Per-Class URL Performance Comparison](#2-per-class-url-performance-comparison)
+   - [WHOIS Feature Ablation Study Comparison](#3-whois-feature-ablation-study-comparison)
+   - [Malware Analysis Modules Comparison (Module A, A', A'')](#4-malware-analysis-modules-comparison-module-a-a-a)
+   - [Malware Per-Class Family Breakdown](#5-malware-per-class-family-breakdown)
+3. [Detailed Explanation of All Engineered & Runtime Features](#detailed-explanation-of-all-engineered--runtime-features)
+   - [Feature Architecture Overview](#feature-architecture-overview)
+   - [Group 1: Lexical URL Features (15 Features)](#group-1-lexical-url-features-15-features)
+   - [Group 2: Host & Domain Structure Features (11 Features)](#group-2-host--domain-structure-features-11-features)
+   - [Group 3: Content-Keyword Features (4 Features)](#group-3-content-keyword-features-4-features)
+   - [Group 4: Structural URL Features (7 Features)](#group-4-structural-url-features-7-features)
+   - [Group 5: Statistical & Information-Theoretic Features (8 Features)](#group-5-statistical--information-theoretic-features-8-features)
+   - [Group 6: Abuse.ch Threat Intelligence Features (8 Features)](#group-6-abusech-threat-intelligence-features-8-features)
+   - [Group 7: URLInfraGNN Heterogeneous Graph Features](#group-7-urlinfragnns-heterogeneous-graph-features)
+   - [Group 8: Live Host Intelligence Features — WHOIS & ASN/BGP (10 Features)](#group-8-live-host-intelligence-features--whois--asnbgp-10-features)
+   - [Group 9: Dynamic Browser Sandbox & Autonomous AI Agent Telemetry](#group-9-dynamic-browser-sandbox--autonomous-ai-agent-telemetry)
+   - [Group 10: Malware Feature Spaces (Memory, Static PE, API Sequences)](#group-10-malware-feature-spaces-memory-static-pe-api-sequences)
+4. [Platform & Application Features](#platform--application-features)
+   - [React 19 SOC Web Dashboard](#1-react-19-soc-web-dashboard-frontend)
+   - [FastAPI Backend REST API](#2-fastapi-backend-rest-api-srcapimainpy)
+   - [Explainable AI (XAI) Engine Comparison](#3-explainable-ai-xai-engine-comparison)
+   - [External Threat Intelligence & AI Services](#4-external-threat-intelligence--ai-services)
+5. [Dataset Corpus & Threat Feed Consolidation](#dataset-corpus--threat-feed-consolidation)
+6. [Private Hugging Face Model Registry](#private-hugging-face-model-registry)
+7. [MLOps, CI/CD, Kaggle Cloud Compute & Green Computing](#mlops-cicd-kaggle-cloud-compute--green-computing)
+8. [Quick Start & Usage](#quick-start--usage)
 
-| Feature Name | Type | Extraction Logic & Formula | Security Rationale |
-|---|---|---|---|
-| `url_length` | Integer | $\text{len}(s)$ | Malicious and phishing URLs are significantly longer than benign URLs due to encoded redirection targets, session tokens, or deep subdomain nesting. |
-| `hostname_length` | Integer | $\text{len}(\text{netloc})$ | Long hostnames often indicate embedded third-party domains, hex-encoded IP addresses, or chained subdomain masquerading. |
-| `path_length` | Integer | $\text{len}(\text{path})$ | Extended path components are used to hide payloads deep within compromised web server directories. |
-| `digit_ratio` | Float | $\frac{\sum \mathbb{I}[c \in \text{'0-9'}]}{\text{len}(s)}$ | High digit ratios indicate randomly generated directory IDs, dynamic session hashes, or hexadecimal/decimal IP encodings. |
-| `uppercase_ratio` | Float | $\frac{\sum \mathbb{I}[c \in \text{'A-Z'}]}{\text{len}(s)}$ | Benign URLs are overwhelmingly lowercase; unexpected capitalization is common in base64 parameters or evasion attempts against case-sensitive filters. |
-| `ip_in_url_flag` | Binary | Regex: `^(?:(?:25[0-5]\|2[0-4][0-9]\|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]\|2[0-4][0-9]\|[01]?[0-9][0-9]?)$` | Phishers and malware command-and-control (C2) servers frequently use raw IP addresses directly in place of registered domain names to bypass domain registration checks. |
-| `count_at` | Integer | $s.\text{count}('@')$ | The `@` symbol in URLs causes standard browsers to treat preceding characters as authentication credentials and navigate to the suffix domain, a common visual spoofing trick. |
-| `count_qmark` | Integer | $s.\text{count}('?')$ | Multiple query delimiters signify chained script redirections or malformed query payloads. |
-| `count_hyphen` | Integer | $s.\text{count}('-')$ | Hyphens are widely used in phishing domains to simulate compound brand names (e.g. `paypal-update-account`). |
-| `count_eq` | Integer | $s.\text{count}('=')$ | Measures parameter assignments; high counts reflect dense tracking or payload-carrying query strings. |
-| `count_dot` | Integer | $s.\text{count}('.')$ | Excessive dots reflect deep subdomain nesting used to simulate legitimate domain hierarchies. |
-| `count_slash` | Integer | $s.\text{count}('/')$ | Indicates path depth and directory traversal nesting. |
-| `count_pct` | Integer | $s.\text{count}('\%')$ | Measures URL hex-encoding (`%20`, `%2F`); attackers use percent-encoding to evade simple string-matching filters. |
-| `count_amp` | Integer | $s.\text{count}('\&')$ | Number of query parameter delimiters. |
-| `count_colon` | Integer | $s.\text{count}(':')$ | Counts port specifications or nested protocol schemes. |
+---
+
+## Repository Layout
+
+```text
+Dataset/                             Multi-GB training datasets & threat feeds (gitignored)
+models/                              Trained .pt, .joblib, and .json checkpoints (gitignored; synced with private HF Hub)
+reports/                             Evaluation metrics JSONs, scan_history.json, and training logs (gitignored)
+
+dags/
+  cyberxai_ml_training_dag.py        5-stage Apache Airflow MLOps pipeline DAG (with standalone fallback runner)
+  tasks/                             data_validation.py, feature_engineering.py, model_training.py,
+                                     model_evaluation.py, model_registry_sync.py
+
+scripts/
+  sync_all_models_to_hf.py           Syncs all 31 active artifacts + Model Card to private HF Hub repo
+
+src/
+  api/
+    main.py                          FastAPI server (URL, DL, GNN, XAI, Host Intel, Graph, Sandbox, Malware,
+                                     Hybrid Analysis v2, History, Metrics, Chatbot, HF Registry)
+    chatbot.py                       Google Gemini 3.5 Flash SOC assistant grounded in scan telemetry
+  url_pipeline/
+    features.py                      53-feature static URL + Abuse.ch extractor & char n-gram TF-IDF builder
+    abuse_features.py                8-feature Abuse.ch ThreatFox + URLhaus singleton IOC matcher
+    whois_features.py                5-feature live WHOIS lookup (cached per registered domain)
+    asn_features.py                  5-feature live DNS + Team Cymru bulk-whois BGP/ASN lookup
+    dl_model.py                      HybridURLNet (PyTorch Tabular Residual Network + INT8 dynamic quantization)
+    train_dl.py / explain_dl.py      Mini-batch class-weighted PyTorch training & sub-second GradientSHAP explainer
+    gnn_model.py                     URLInfraGNN (2-layer pure-PyTorch Graph Attention Network, no PyG/DGL C++ deps)
+    gnn_graph_builder.py             4-node heterogeneous star-ego graph builder (URL <-> Domain <-> IP <-> ASN)
+    train_gnn.py / explain_gnn.py    URLInfraGNN training & Layer-2 GAT attention attribution engine
+    train.py / explain.py            Classical Soft-Voting Ensemble (RF + XGB + LR + GNB) & TreeSHAP explainer
+    train_shap_surrogate.py          Shallow-RF TreeSHAP surrogate trainer for fast serving
+    run_whois_ablation.py            Reproducible 5,000-URL WHOIS ablation benchmark
+    build_combined_dataset.py        SQLite-backed priority-merged, deduplicated, sorted corpus builder
+    merge_new_threat_data.py         Incremental deduplicated ThreatFox / PhishTank / URLhaus feed merger
+    dynamic_escalation.py            Module C Playwright headless Chromium confidence-gated sandbox
+    dynamic_agent.py                 Autonomous dynamic security agent (Playwright + fallback HTTP, 8 JS AST rules,
+                                     MITRE ATT&CK mapping, DOM trap scan, TLS handshake verification, safe HTML)
+    hybrid_analysis_client.py        CrowdStrike Falcon Sandbox (Hybrid Analysis API v2) client
+    whois_bulk_enrich.py / asn_bulk_enrich.py   Checkpointed bulk domain enrichment pipelines
+  malware_pipeline/
+    train_dynamic_baseline.py        Module A: CIC-MalMem-2022 Volatility memory forensics (binary & 4-family)
+    train_static_baseline.py         Module A': BODMAS + EMBER-2018 static PE analysis (2,381 features)
+    train_api_sequence_baseline.py   Module A'': MalAPI2019 8-family Windows API sequence TF-IDF classifier
+    explain.py / explain_static.py   TreeSHAP explainers for dynamic & static malware models
+  model_registry.py                  Auto-downloads missing checkpoints from private HF Hub on demand
+  upload_models.py                   CLI uploader for models/ -> private HF Hub repo
+  fetch_abusech_data.py              Authenticated Abuse.ch ThreatFox + URLhaus exporter
+  download_additional_datasets.py    Kaggle + OpenPhish feed downloader
+  download_more_datasets.py          Kaggle + OpenPhish + Tranco Top 1M downloader
+  merge_sort_datasets.py             17-source URL dataset consolidator with threat metadata & disk cleanup
+  kaggle_*.py                        Self-contained Kaggle GPU/CPU training, enrichment & watcher utilities
+
+frontend/
+  src/                               React 19 + Vite 8 + Tailwind CSS 3 + ReactFlow + Recharts SOC Dashboard
+  code.html                          Legacy standalone single-file HTML fallback served at GET /
+
+.github/workflows/ci.yml             GitHub Actions syntax compile + full src/ import verification gate
+docker-compose.airflow.yml           PostgreSQL + Apache Airflow 2.8.1 LocalExecutor stack
+.env.example                         Configuration template for HF, Gemini, Abuse.ch, Kaggle, and Hybrid Analysis
+```
+
+---
+
+## Experimental Results & Comparison Tables
+
+All metrics reported below are read directly from the persisted evaluation artifacts in [`models/`](models/) and [`reports/`](reports/).
+
+### 1. URL Classification Models Comparison
+
+Four URL classification models were trained and benchmarked across the 4-class URL taxonomy (`benign`, `phishing`, `defacement`, `malware`):
+
+| Model | Architecture | Input Feature Space | Train / Test Split | Accuracy | Macro Precision | Macro Recall | Macro F1 | Weighted F1 | Artifact Checkpoint |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`URLInfraGNN`** *(Best Overall)* | 2-Layer Pure-PyTorch Graph Attention Network (GAT) | 45 URL + 8 Domain + 4 IP + 4 ASN nodes | 85% / 15% (`25,145` test) | **89.77%** | **89.49%** | 89.45% | **0.8947** | **0.8980** | `url_gnn_model.pt` (`72.3 KB`) |
+| **`HybridURLNet`** | Tabular Residual Neural Network (Linear + BatchNorm + SiLU + Skip) | 45 static hybrid URL features | 80% / 20% (`33,526` test) | **89.46%** | 89.04% | **89.47%** | **0.8916** | **0.8953** | `url_dl_model.pt` (`208.4 KB`) |
+| **Soft-Voting Ensemble (Hybrid + WHOIS)** | RF + XGBoost + LogisticRegression + GaussianNB | 50 features (45 hybrid + 5 WHOIS) | `306,505` train / `76,627` test | **81.85%** | 83.19% | 81.52% | 0.8163 | 0.8148 | `url_voting_classifier.joblib` (`82.6 MB`) |
+| **Soft-Voting Ensemble (90-Feat Baseline)** | RF + XGBoost + LogisticRegression + GaussianNB (SMOTE-balanced) | 90 features (Top-30 engineered + 60 char n-grams) | `4,670,696` train / `509,421` test | **84.83%** | 78.32% | 87.09% | 0.8103 | 0.8455 | `reports/url_module_b_metrics.json` (Macro AUC: **0.9641**) |
+
+> **Key Takeaway:** Compact PyTorch neural architectures (`URLInfraGNN` at `72.3 KB` and `HybridURLNet` at `208.4 KB`) outperform the much larger classical soft-voting ensembles by **+4.94% to +7.92% accuracy** and **+0.078 to +0.084 Macro F1**, while eliminating multi-gigabyte SMOTE memory overhead and delivering sub-second inference.
+
+### 2. Per-Class URL Performance Comparison
+
+| Class | Metric | `URLInfraGNN` (`n=25,145`) | `HybridURLNet` (`n=33,526`) | Voting Ensemble 50-Feat (`n=76,627`) | Voting Ensemble 90-Feat (`n=509,421`) |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Benign** | Precision / Recall / **F1** | 0.8537 / 0.8712 / **0.8623** (`n=7,500`) | 0.8612 / 0.8579 / **0.8595** (`n=10,000`) | 0.6859 / 0.8058 / **0.7410** (`n=20,631`) | 0.8839 / 0.9242 / **0.9036** (`n=291,919`) |
+| **Phishing** | Precision / Recall / **F1** | 0.8956 / 0.8886 / **0.8921** (`n=5,289`) | 0.9063 / 0.8708 / **0.8882** (`n=7,051`) | 0.8429 / 0.6073 / **0.7059** (`n=19,094`) | 0.8993 / 0.6545 / **0.7576** (`n=150,594`) |
+| **Defacement** | Precision / Recall / **F1** | 0.8655 / 0.8728 / **0.8692** (`n=4,734`) | 0.8156 / 0.9173 / **0.8635** (`n=6,312`) | 0.8745 / 0.9911 / **0.9292** (`n=21,441`) | 0.6740 / 0.9583 / **0.7914** (`n=40,438`) |
+| **Malware** | Precision / Recall / **F1** | 0.9648 / 0.9454 / **0.9550** (`n=7,622`) | 0.9785 / 0.9330 / **0.9552** (`n=10,163`) | 0.9243 / 0.8568 / **0.8893** (`n=15,461`) | 0.6756 / 0.9464 / **0.7884** (`n=26,470`) |
+
+Error rates recorded for the 90-feature baseline (`reports/url_module_b_metrics.json`):
+- **False Negative Rate (FNR):** Benign `7.58%` | Defacement `4.17%` | Malware `5.36%` | Phishing `34.55%` *(significantly mitigated by `URLInfraGNN` and `HybridURLNet`, which raised Phishing recall from `65.45%` to `88.86%` and `87.08%`, respectively)*
+- **False Positive Rate (FPR):** Benign `16.30%` | Defacement `4.00%` | Malware `2.49%` | Phishing `3.08%`
+
+### 3. WHOIS Feature Ablation Study Comparison
+
+Evaluated via [`src/url_pipeline/run_whois_ablation.py`](src/url_pipeline/run_whois_ablation.py) on a stratified `4,999`-URL sample (observed live WHOIS availability rate: **73.24%**):
+
+| Configuration | Sample Size | Accuracy | Macro Precision | Macro Recall | Macro F1 | Macro ROC-AUC |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Static Hybrid Features Only (Without WHOIS)** | 4,999 | 79.20% | 0.7939 | 0.7719 | 0.7740 | 0.9154 |
+| **Static Hybrid + 5 Live WHOIS Features (With WHOIS)** | 4,999 | **81.60%** | **0.8239** | **0.7978** | **0.8008** | **0.9327** |
+| **Absolute Improvement ($\Delta$)** | — | **+2.40%** | **+0.0300** | **+0.0259** | **+0.0269** | **+0.0173** |
+
+### 4. Malware Analysis Modules Comparison (Module A, A', A'')
+
+| Module | Task & Dataset | Model Pair | Feature Space | Train / Test Split | Accuracy | Macro / Binary F1 | ROC-AUC | FNR / FPR |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Module A (Binary)** | Benign vs. Malware (`Obfuscated-MalMem2022`) | RF + XGBoost | 55 Volatility memory forensics stats | `46,446` train / `11,612` test | **100.00%** | **1.0000** | **1.0000** | `0.00%` / `0.00%` |
+| **Module A (Multiclass)** | 4-Class Family (`Benign`, `Spyware`, `Trojan`, `Ransomware`) | RF + XGBoost | 55 Volatility memory forensics stats | `46,446` train / `11,612` test | **87.81%** | **0.8153** *(Weighted: 0.8779)* | **0.9729** | Class-dependent (see below) |
+| **Module A' (Internal)** | Static PE Binary (`BODMAS` 134,428 + `EMBER` 599,920) | RF (`max_depth=16`) + XGBoost | 2,381 EMBER PE static features (`F1..F2381`) | `734,348` pool / `146,870` holdout | **98.11%** | **0.9805** | **0.9982** | `2.29%` / `1.52%` |
+| **Module A' (External)** | Unseen External Holdout (`test_ember_2018_v2`) | RF (`max_depth=16`) + XGBoost | 2,381 EMBER PE static features (`F1..F2381`) | `199,956` unseen external samples | **96.64%** | **0.9664** | **0.9942** | `3.39%` / `3.32%` |
+| **Module A'' (API Seq)** | 8-Family Malware Classification (`MalAPI2019`) | RF + XGBoost | 500 word-level 1–3 gram TF-IDF API calls | `5,685` train / `1,422` test | **67.30%** | **0.6885** *(Weighted: 0.6743)* | **0.9175** | Class-dependent (see below) |
+
+### 5. Malware Per-Class Family Breakdown
+
+#### Module A — CIC-MalMem-2022 Memory Forensics (`n = 11,612` test)
+
+| Family Class | Support | Precision | Recall | F1-Score | FNR | FPR | Top Global SHAP Drivers |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Benign** | 5,846 | 1.0000 | 1.0000 | **1.0000** | 0.00% | 0.00% | `svcscan.nservices` (0.0393) |
+| **Spyware** | 1,963 | 0.7801 | 0.8044 | **0.7921** | 19.56% | 4.61% | `svcscan.shared_process_services` (0.0330) |
+| **Trojan** | 1,897 | 0.7384 | 0.7364 | **0.7374** | 26.36% | 5.10% | `handles.avg_handles_per_proc` (0.0283) |
+| **Ransomware** | 1,906 | 0.7427 | 0.7209 | **0.7316** | 27.91% | 4.90% | `svcscan.kernel_drivers` (0.0272) |
+
+#### Module A'' — MalAPI2019 Windows API Call Sequences (`n = 1,422` test)
+
+| Malware Family | Support | Precision | Recall | F1-Score | FNR | FPR |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Adware** | 76 | 0.9552 | 0.8421 | **0.8951** | 15.79% | 0.22% |
+| **Virus** | 201 | 0.8737 | 0.8607 | **0.8672** | 13.93% | 2.05% |
+| **Downloader** | 200 | 0.7561 | 0.7750 | **0.7654** | 22.50% | 4.09% |
+| **Worms** | 200 | 0.6390 | 0.6550 | **0.6469** | 34.50% | 6.06% |
+| **Dropper** | 178 | 0.6532 | 0.6348 | **0.6439** | 36.52% | 4.82% |
+| **Backdoor** | 200 | 0.6465 | 0.6400 | **0.6432** | 36.00% | 5.73% |
+| **Spyware** | 167 | 0.5602 | 0.5569 | **0.5586** | 44.31% | 5.82% |
+| **Trojan** | 200 | 0.4762 | 0.5000 | **0.4878** | 50.00% | 9.00% |
+
+---
+
+## Detailed Explanation of All Engineered & Runtime Features
+
+### Feature Architecture Overview
+
+| Feature Block | Source Module | Count | Execution Mode | Primary Purpose |
+| :--- | :--- | :---: | :--- | :--- |
+| **Group 1: Lexical URL Features** | `src/url_pipeline/features.py` | 15 | Static / Zero-Network | Character ratios, lengths, IPv4 detection, special delimiter counts |
+| **Group 2: Host & Domain Structure** | `src/url_pipeline/features.py` | 11 | Static (`tldextract` PSL) | Subdomain nesting, TLD abuse flags, domain entropy, brand spoofing |
+| **Group 3: Content-Keyword Signals** | `src/url_pipeline/features.py` | 4 | Static / String Scan | Credential harvesting, brand, coercive action & PII keyword hits |
+| **Group 4: Structural URL Anatomy** | `src/url_pipeline/features.py` | 7 | Static / URI Parse | Path depth, GET params, fragment/double-slash flags, path/query entropy |
+| **Group 5: Statistical & Info-Theoretic** | `src/url_pipeline/features.py` | 8 | Static / Compression | Overall URL entropy, zlib compression ratio, diversity, token statistics |
+| **Group 6: Abuse.ch Threat Intel** | `src/url_pipeline/abuse_features.py` | 8 | Local Indexed IOC Lookup | ThreatFox & URLhaus matches, confidence, C2/payload/online flags, TLD risk |
+| **Group 7: Infrastructure Graph Nodes** | `src/url_pipeline/gnn_graph_builder.py` | 45+8+4+4 | Hybrid Static + Host Intel | Heterogeneous node embeddings for `URL <-> Domain <-> IP <-> ASN` GAT |
+| **Group 8: Live WHOIS & ASN/BGP Intel** | `whois_features.py` / `asn_features.py` | 10 | Live Cached Network | Registration age, privacy redaction, resolved IP, ASN, BGP prefix, RIR |
+| **Group 9: Dynamic Sandbox & Agent** | `dynamic_escalation.py` / `dynamic_agent.py` | 18+ | Isolated Chromium / HTTP | Redirect chains, 8 MITRE JS AST patterns, DOM traps, pHash, TLS verification |
+| **Group 10: Malware Feature Spaces** | `src/malware_pipeline/*.py` | 55 / 2,381 / 500 | Offline / Upload Triage | Volatility memory stats, EMBER/BODMAS PE vectors, API 1–3 gram TF-IDF |
+
+> **Leakage Prevention (`normalize_url`):** Before static feature extraction, `normalize_url()` in `src/url_pipeline/features.py` strips URL schemes (`http://`, `https://`, etc.) and CSV wrapping single quotes. In legacy corpora, ~92% of benign rows lacked a scheme prefix while ~96–100% of malware/defacement rows included one; stripping schemes uniformly prevents models from learning a false correlation between `https://` and maliciousness.
+
+---
+
+### Group 1: Lexical URL Features (15 Features)
+
+| # | Feature Name | Type | Formula / Extraction Logic | Security Rationale |
+| :---: | :--- | :---: | :--- | :--- |
+| 1 | `url_length` | Int | $\text{len}(s)$ | Phishing and malware delivery URLs are typically longer due to encoded tokens, redirect parameters, and deep paths. |
+| 2 | `hostname_length` | Int | $\text{len}(\text{hostname})$ | Extended hostnames often reflect chained brand-impersonating subdomains or DGA strings. |
+| 3 | `path_length` | Int | $\text{len}(\text{path})$ | Long URI paths conceal payloads inside compromised web directories or kit subfolders. |
+| 4 | `digit_ratio` | Float | $\frac{\sum \mathbb{I}[c \in \text{0-9}]}{\max(\text{len}(s), 1)}$ | High digit density indicates randomized directory IDs, session hashes, or encoded IPs. |
+| 5 | `uppercase_ratio` | Float | $\frac{\sum \mathbb{I}[c \in \text{A-Z}]}{\max(\text{len}(s), 1)}$ | Normal URLs are predominantly lowercase; uppercase spikes correlate with Base64 tokens or filter evasion. |
+| 6 | `ip_in_url_flag` | Binary | IPv4 regex match on `hostname` | Raw IPv4 addresses bypass domain registration trails and DNS reputation checks (common in C2/droppers). |
+| 7 | `count_at` | Int | $s.\text{count}(\text{'@'})$ | Browsers interpret text before `@` as userinfo and navigate to the host after `@`, enabling visual host spoofing. |
+| 8 | `count_qmark` | Int | $s.\text{count}(\text{'?'})$ | Multiple query delimiters often indicate chained script redirections or malformed payload parameters. |
+| 9 | `count_hyphen` | Int | $s.\text{count}(\text{'-'})$ | Hyphens are heavily abused in deceptive lookalike domains (e.g., `paypal-verify-account`). |
+| 10 | `count_eq` | Int | $s.\text{count}(\text{'='})$ | Counts query key-value assignments used by phishing kits to carry victim tokens or redirect targets. |
+| 11 | `count_dot` | Int | $s.\text{count}(\text{'.'})$ | Excessive dots reveal deep multi-level subdomain masquerading. |
+| 12 | `count_slash` | Int | $s.\text{count}(\text{'/'})$ | Captures overall path nesting and directory depth. |
+| 13 | `count_pct` | Int | $s.\text{count}(\text{'\%'})$ | Measures percent hex-encoding (`%20`, `%2F`) used to obfuscate URL strings against signature filters. |
+| 14 | `count_amp` | Int | $s.\text{count}(\text{'\&'})$ | Tracks query parameter proliferation across tracking/redirect chains. |
+| 15 | `count_colon` | Int | $s.\text{count}(\text{':'})$ | Detects explicit non-standard port numbers or nested scheme delimiters inside query parameters. |
 
 ---
 
 ### Group 2: Host & Domain Structure Features (11 Features)
 
-Extracted using Mozilla's Public Suffix List via `tldextract` to accurately isolate registered second-level domains (SLD), subdomains, and top-level domain (TLD) suffixes.
+Extracted via Mozilla's Public Suffix List (`tldextract`) to separate `subdomain`, registered `domain` (SLD), and `suffix` (TLD):
 
-| Feature Name | Type | Extraction Logic & Details | Security Rationale |
-|---|---|---|---|
-| `subdomain_count` | Integer | Number of dot-separated tokens in `subdomain` | Benign sites rarely exceed 1-2 subdomains; phishing kits frequently chain 3 to 6 subdomains (e.g. `login.secure.verify.paypal.com.attacker.com`). |
-| `domain_length` | Integer | $\text{len}(\text{SLD})$ | Length in characters of the registered domain name (excluding TLD and subdomains). |
-| `tld_length` | Integer | $\text{len}(\text{TLD})$ | Character length of the top-level domain suffix (e.g. `com` = 3, `online` = 6). |
-| `suspicious_tld_flag` | Binary | Checked against 26 high-abuse TLDs: `.zip`, `.review`, `.country`, `.kim`, `.cricket`, `.science`, `.work`, `.party`, `.gq`, `.link`, `.xyz`, `.top`, `.click`, `.tk`, `.ml`, `.ga`, `.cf`, `.loan`, `.download`, `.men`, `.win`, `.bid`, `.stream`, `.date`, `.racing` | Free or ultra-cheap registrar TLDs account for a disproportionate share of transient phishing and malware distribution campaigns. |
-| `hyphen_in_domain_flag` | Binary | $\mathbb{I}[\text{'-'} \in \text{domain}]$ | Detects hyphenated domain registrations. |
-| `digit_in_domain_flag` | Binary | $\mathbb{I}[\exists c \in \text{domain}: c \text{ is digit}]$ | Detects numbered domains frequently used by automated disposable infrastructure. |
-| `domain_entropy` | Float | Shannon Entropy: $H(\text{domain}) = -\sum_{c} P(c) \log_2 P(c)$ | Algorithmically generated domains (DGAs) used by botnets and malware possess significantly higher entropy than human-readable natural language brand domains. |
-| `subdomain_length` | Integer | Total character length of all subdomain tokens combined | Phishers pack brand names into subdomains, resulting in abnormally high subdomain lengths. |
-| `domain_token_count` | Integer | Number of alphanumeric tokens in domain separated by `.` or `-` | Measures internal domain fragmentation. |
-| `brand_in_domain_flag` | Binary | Checked against 12 target brands: `paypal`, `amazon`, `apple`, `google`, `microsoft`, `facebook`, `netflix`, `bank`, `instagram`, `whatsapp`, `outlook`, `icloud` | Direct detection of brand keyword spoofing inside the registered domain name. |
-| `brand_in_subdomain_flag` | Binary | $\mathbb{I}[\text{brand} \in \text{subdomain} \land \text{brand} \notin \text{domain}]$ | Identifies subdomain brand impersonation: the brand appears in the subdomain while the actual registered domain belongs to an unrelated third party (e.g., `paypal.com-verify.xyz`). |
+| # | Feature Name | Type | Extraction Logic | Security Rationale |
+| :---: | :--- | :---: | :--- | :--- |
+| 16 | `subdomain_count` | Int | Dot-separated token count in `subdomain` | Benign sites typically use 0–2 subdomains; phishing kits chain 3–6+ subdomains (`login.paypal.com.attacker.xyz`). |
+| 17 | `domain_length` | Int | $\text{len}(\text{SLD})$ | Length of the registered second-level domain excluding subdomains and TLD. |
+| 18 | `tld_length` | Int | $\text{len}(\text{suffix})$ | Character length of the public suffix (`.com` = 3 vs `.country` = 7). |
+| 19 | `suspicious_tld_flag` | Binary | Suffix in 25 high-abuse TLDs: `.zip`, `.review`, `.country`, `.kim`, `.cricket`, `.science`, `.work`, `.party`, `.gq`, `.link`, `.xyz`, `.top`, `.click`, `.tk`, `.ml`, `.ga`, `.cf`, `.loan`, `.download`, `.men`, `.win`, `.bid`, `.stream`, `.date`, `.racing` | Free/low-cost registrar TLDs host a disproportionate volume of disposable phishing and malware infrastructure. |
+| 20 | `hyphen_in_domain_flag` | Binary | $\mathbb{I}[\text{'-'} \in \text{domain}]$ | Flags hyphen-joined lookalike brand registrations. |
+| 21 | `digit_in_domain_flag` | Binary | $\mathbb{I}[\exists c \in \text{domain}: c \text{ is digit}]$ | Detects numbered disposable infrastructure and typosquatting substitutions (`paypa1` / `host123`). |
+| 22 | `domain_entropy` | Float | $H(\text{registered\_domain}) = -\sum P(c)\log_2 P(c)$ | Algorithmically generated domains (DGAs) show higher character entropy than pronounceable brand domains. |
+| 23 | `subdomain_length` | Int | $\text{len}(\text{subdomain})$ | Captures abnormally long brand-stuffed subdomain prefixes. |
+| 24 | `domain_token_count` | Int | Count of tokens splitting `domain` on `[.-]` | Measures hyphenated/multi-word fragmentation inside the registered SLD. |
+| 25 | `brand_in_domain_flag` | Binary | Any of 12 target brands (`paypal`, `amazon`, `apple`, `google`, `microsoft`, `facebook`, `netflix`, `bank`, `instagram`, `whatsapp`, `outlook`, `icloud`) as substring of `domain` while `domain != brand` | Catches compound brand-impersonation domains like `paypal-verify-account.com` while exempting the authentic apex domain `paypal.com`. |
+| 26 | `brand_in_subdomain_flag` | Binary | Brand in `subdomain` while `domain` is not that brand | Catches classic subdomain masquerading such as `paypal.com.attacker-host.tk`. |
 
 ---
 
 ### Group 3: Content-Keyword Features (4 Features)
 
-Keyword frequency features scan the URL string for specific semantic triggers across credential harvesting, impersonation, coercion, and financial theft.
-
-| Feature Name | Type | Keyword Dictionary & Scope | Security Rationale |
-|---|---|---|---|
-| `phish_keyword_count` | Integer | 13 Credential Harvesting Keywords: `login`, `signin`, `account`, `verify`, `secure`, `update`, `confirm`, `banking`, `webscr`, `password`, `credential`, `suspend`, `urgent` | Phishing URLs consistently employ authentication and account-urgency terms to trick victims into entering credentials. |
-| `brand_keyword_count` | Integer | 12 Brand Keywords: `paypal`, `amazon`, `apple`, `google`, `microsoft`, `facebook`, `netflix`, `bank`, `instagram`, `whatsapp`, `outlook`, `icloud` | Scans the full URL path and query string for unauthorized brand references. |
-| `action_keyword_count` | Integer | 7 Coercive Action Keywords: `download`, `install`, `click`, `free`, `gift`, `bonus`, `win` | Malware drops and defacement/scam URLs heavily rely on enticing or coercive call-to-action triggers. |
-| `sensitive_keyword_count` | Integer | 6 PII & Financial Keywords: `ssn`, `creditcard`, `cvv`, `otp`, `pin`, `wallet` | High-value targets for identity theft and banking credential exfiltration. |
+| # | Feature Name | Type | Keyword Dictionary | Security Rationale |
+| :---: | :--- | :---: | :--- | :--- |
+| 27 | `phish_keyword_count` | Int | 13 terms: `login`, `signin`, `account`, `verify`, `secure`, `update`, `confirm`, `banking`, `webscr`, `password`, `credential`, `suspend`, `urgent` | Detects social-engineering urgency and credential-capture terms in URLs. |
+| 28 | `brand_keyword_count` | Int | 12 brands: `paypal`, `amazon`, `apple`, `google`, `microsoft`, `facebook`, `netflix`, `bank`, `instagram`, `whatsapp`, `outlook`, `icloud` | Measures unauthorized brand references anywhere across host, path, or query string. |
+| 29 | `action_keyword_count` | Int | 7 terms: `download`, `install`, `click`, `free`, `gift`, `bonus`, `win` | Flags coercive call-to-action triggers common in drive-by downloads and scam/defacement lures. |
+| 30 | `sensitive_keyword_count` | Int | 6 terms: `ssn`, `creditcard`, `cvv`, `otp`, `pin`, `wallet` | Identifies high-value financial and PII credential harvesting targets. |
 
 ---
 
-### Group 4: Structural Features (7 Features)
+### Group 4: Structural URL Features (7 Features)
 
-Structural features inspect the anatomy of the URL path hierarchy, query strings, and parameter delimiters.
-
-| Feature Name | Type | Extraction Logic | Security Rationale |
-|---|---|---|---|
-| `path_depth` | Integer | Number of directory levels (occurrences of `/` in path) | Deep directory hierarchies are used to conceal malicious scripts or simulate legitimate enterprise directory layouts. |
-| `param_count` | Integer | Number of GET query parameters (split on `&` in query) | Dense parameter arrays are common in phishing toolkits that pass victim identifiers across redirect hops. |
-| `has_fragment_flag` | Binary | $\mathbb{I}[\text{fragment is not empty}]$ | Detects `#` anchor fragments, sometimes used in client-side JavaScript DOM redirection. |
-| `double_slash_in_path_flag`| Binary | $\mathbb{I}[\text{'//'} \in \text{path}]$ | Attackers insert `//` into URL paths to exploit path-normalization bugs in proxies and web application firewalls. |
-| `query_length` | Integer | $\text{len}(\text{query})$ | Total length of the URL query string. |
-| `path_entropy` | Float | Shannon entropy of characters in the URL path | Distinguishes meaningful human-readable paths (e.g. `/news/article`) from randomized payload paths (e.g. `/a8f9b2c4`). |
-| `query_entropy` | Float | Shannon entropy of characters in the URL query string | Detects encrypted or obfuscated query payloads. |
+| # | Feature Name | Type | Extraction Logic | Security Rationale |
+| :---: | :--- | :---: | :--- | :--- |
+| 31 | `path_depth` | Int | `path.count("/")` | Deep hierarchical paths hide malicious scripts inside compromised CMS directories. |
+| 32 | `param_count` | Int | `query.count("&") + (1 if query else 0)` | Counts GET parameters often carrying base64 victims' emails, tokens, or redirect URLs. |
+| 33 | `has_fragment_flag` | Binary | $\mathbb{I}[\text{bool}(\text{fragment})]$ | Detects `#` URI fragments used in client-side DOM phishing kits to evade server logs. |
+| 34 | `double_slash_in_path_flag` | Binary | $\mathbb{I}[\text{'//'} \in \text{path}]$ | Identifies open-redirect chains or path-normalization evasion tricks inside URI paths. |
+| 35 | `query_length` | Int | $\text{len}(\text{query})$ | Extended query payloads correlate with encoded redirect/exfiltration strings. |
+| 36 | `path_entropy` | Float | $H(\text{path})$ | Distinguishes readable paths (`/docs/api`) from randomized hashes (`/x9f2a8b1`). |
+| 37 | `query_entropy` | Float | $H(\text{query})$ | High entropy indicates encrypted, Base64-encoded, or randomized query blobs. |
 
 ---
 
 ### Group 5: Statistical & Information-Theoretic Features (8 Features)
 
-Mathematical and compression-based metrics that evaluate the overall randomness and token composition of the complete URL string.
+| # | Feature Name | Type | Calculation | Security Rationale |
+| :---: | :--- | :---: | :--- | :--- |
+| 38 | `url_entropy` | Float | Shannon entropy $H(s)$ over entire normalized URL | Quantifies global randomness across hostname, path, and query. |
+| 39 | `compression_ratio` | Float | $\text{len}(\text{zlib.compress}(s)) / \max(\text{len}(s), 1)$ | Random DGA/hash URLs resist DEFLATE compression (high ratio); repetitive padding compresses tightly (low ratio). |
+| 40 | `char_diversity` | Float | $|\text{set}(s)| / \max(\text{len}(s), 1)$ | Proportion of distinct characters across the URL string. |
+| 41 | `token_count` | Int | Token count splitting on `[/\-_.?=&%@:]+` | Captures total lexical token density across all URL segments. |
+| 42 | `avg_token_length` | Float | Mean character length of extracted tokens | Malicious URLs often embed long encoded tokens (hashes/UUIDs/Base64 strings). |
+| 43 | `max_token_length` | Int | Maximum character length among extracted tokens | Isolates single abnormally long obfuscated payload tokens. |
+| 44 | `unique_token_ratio` | Float | $|\text{set}(\text{tokens})| / \text{len}(\text{tokens})$ | Repetitive directory/keyword stuffing lowers token uniqueness. |
+| 45 | `special_char_ratio` | Float | Non-alphanumeric char count $/ \max(\text{len}(s), 1)$ | Elevated punctuation/control-character density correlates with obfuscated payloads. |
 
-| Feature Name | Type | Formula & Calculation | Security Rationale |
-|---|---|---|---|
-| `url_entropy` | Float | Overall Shannon Entropy: $H(s) = -\sum_{c} P(c) \log_2 P(c)$ | Measures the information density across the entire URL. Highly obfuscated URLs exhibit elevated entropy. |
-| `compression_ratio` | Float | $\frac{\text{len}(\text{zlib.compress}(s.\text{encode}()))}{\text{len}(s)}$ | Measures compressibility. Highly repetitive, automated, or single-character padded URLs produce abnormally low ratios; random DGA URLs produce high ratios. |
-| `char_diversity` | Float | $\frac{|\text{unique characters}|}{\text{len}(s)}$ | Ratio of distinct characters to total string length. |
-| `token_count` | Integer | Number of tokens after splitting on `[/._\-?=&%@:]+` | Measures total lexical token volume across host, path, and query. |
-| `avg_token_length` | Float | Mean character length of all extracted tokens | Malicious URLs often feature abnormally long individual tokens (hashes, encoded strings). |
-| `max_token_length` | Integer | Maximum character length among all extracted tokens | Captures single long encoded components. |
-| `unique_token_ratio` | Float | $\frac{|\text{unique tokens}|}{\text{total tokens}}$ | Repetitive keyword stuffing produces lower unique token ratios. |
-| `special_char_ratio` | Float | $\frac{\sum_{c \in \text{SPECIAL\_CHARS}} s.\text{count}(c)}{\text{len}(s)}$ where characters are `@?-_=./%&:` | High density of punctuation and control characters strongly correlates with obfuscation techniques. |
+> **Additional Classical Ensemble Block (`features.py` & `train.py`):** The classical Soft-Voting Ensemble (`train.py`) also supports character-level **TF-IDF n-gram features** (`ngram_range=(2, 3)`, `max_features=100`, float32-cast before densification, fit strictly on the training split).
 
 ---
 
-### Supplementary Host Intelligence Features (10 Features — Live Lookups)
+### Group 6: Abuse.ch Threat Intelligence Features (8 Features)
 
-These features provide deep infrastructure and registration context during live single-URL analysis and ablation experiments.
+Implemented in [`src/url_pipeline/abuse_features.py`](src/url_pipeline/abuse_features.py) as a cached singleton index (`AbuseThreatIntelIndex`) built from authenticated **ThreatFox** (`Dataset/threatfox_full.csv`) and **URLhaus** (`Dataset/file.csv.txt`) feeds, with a **`SHARED_HOSTING_DOMAINS` safeguard** (35 legitimate platforms such as `github.com`, `google.com`, `cloudflare.com`, `dropbox.com`, `amazonaws.com`, `discord.com`) so apex-domain matches on shared CDNs/repositories never trigger false positives unless the **exact** malicious URL path matches:
 
-#### WHOIS Domain Intelligence (`whois_features.py`)
-1. `whois_available` *(Binary)*: Indicates whether authoritative WHOIS registration data was successfully retrieved.
-2. `domain_age_days` *(Integer)*: Total days elapsed since the domain was first registered. Malicious domains are overwhelmingly young (often registered within days or weeks of attack launch).
-3. `registration_length_days` *(Integer)*: Number of days between registration creation and scheduled expiration. Legitimate organizations register domains for 3–10 years; threat actors typically purchase the minimum 1-year registration.
-4. `recent_domain_flag` *(Binary)*: Binary flag set to 1 if `domain_age_days < 90`. A vital security heuristic for newly minted threat infrastructure.
-5. `whois_private_flag` *(Binary)*: Binary flag set to 1 if registrant identity is obscured behind privacy protection proxies (e.g. WhoisGuard, Domains By Proxy).
+| # | Feature Name | Type | Extraction Logic |
+| :---: | :--- | :---: | :--- |
+| 46 | `abuse_threatfox_match` | Float (0/1) | Matches normalized URL, non-shared domain, or `host:port` IP against ThreatFox IOCs. |
+| 47 | `abuse_urlhaus_match` | Float (0/1) | Matches normalized URL or non-shared registered domain against URLhaus malware dumps. |
+| 48 | `abuse_confidence_score` | Float [0, 1] | ThreatFox reported confidence (`0–100 / 100`, min `0.85` on match) or `0.90` (online URLhaus) / `0.70` (offline URLhaus). |
+| 49 | `abuse_payload_delivery_flag` | Float (0/1) | `1.0` if ThreatFox `threat_type` contains `"payload"` or URLhaus matched. |
+| 50 | `abuse_c2_flag` | Float (0/1) | `1.0` if ThreatFox `threat_type` indicates `"c2"` or `"botnet"`. |
+| 51 | `abuse_online_flag` | Float (0/1) | `1.0` if URLhaus marks the exact malware distribution URL as currently `online`. |
+| 52 | `abuse_tld_risk_score` | Float [0, 0.85] | Empirical abuse weighting: `0.85` for 27 high-risk TLDs, `0.0` for `.gov/.edu/.mil`, `0.05` for low-risk TLDs, else $\min(\text{tld\_count}/1000, 0.65)$. |
+| 53 | `abuse_ioc_match_any` | Float (0/1) | `1.0` if matched in either ThreatFox or URLhaus. |
 
-#### ASN & BGP Routing Intelligence (`asn_features.py`)
-6. `asn_available` *(Binary)*: Indicates whether authoritative DNS resolution and BGP route lookup succeeded.
-7. `resolved_ip` *(String)*: Authoritative IPv4 address resolved via live DNS A-record query.
-8. `asn` *(Integer)*: Autonomous System Number (e.g. AS15169 Google, AS13335 Cloudflare, AS16509 Amazon) identifying the network hosting the domain.
-9. `bgp_prefix_length` *(Integer)*: Subnet routing mask (e.g. `/24`, `/16`). Rogue hosting providers frequently advertise fragmented or unusual BGP CIDR blocks.
-10. `registry` / `asn_country_code` *(String)*: Regional Internet Registry (`arin`, `ripencc`, `apnic`, `lacnic`, `afrinic`) and geographical ISO two-letter country code.
+---
+
+### Group 7: URLInfraGNN's Heterogeneous Graph Features
+
+Implemented in [`src/url_pipeline/gnn_model.py`](src/url_pipeline/gnn_model.py) and [`src/url_pipeline/gnn_graph_builder.py`](src/url_pipeline/gnn_graph_builder.py) using pure PyTorch tensors (zero C++/CUDA extension dependencies):
+
+- **Graph Attention Mechanism (2 GAT Layers + LayerNorm + Residual ELU Skip):**
+  $$\alpha_{ij} = \text{softmax}_j\left(\text{LeakyReLU}\left(\mathbf{a}^T \left[\mathbf{W}h_i \parallel \mathbf{W}h_j\right]\right)\right), \qquad h_i' = \sigma\left(\sum_{j \in \mathcal{N}(i)} \alpha_{ij}\mathbf{W}h_j\right)$$
+- **Bidirectional Star-Ego Adjacency Topology (with self-loops):** `URL <-> Domain <-> IP <-> ASN`.
+
+| Node Type | Input Dim | Node Feature Vector Breakdown |
+| :--- | :---: | :--- |
+| **URL Node (Node 0)** | 45 | Scaled 45-dim URL lexical, host, keyword, structural, and statistical vector (with fallback support for 53-dim checkpoints) |
+| **Domain Node (Node 1)** | 8 | `[domain_length/50, domain_entropy/5, suspicious_tld, hyphen_in_domain, digit_in_domain, token_count/10, domain_age_norm, whois_private_flag]` |
+| **IP Node (Node 2)** | 4 | `[octet1/255, octet2/255, octet3/255, is_routable_flag]` (uses live DNS A-record when available, deterministic hostname hash offline) |
+| **ASN Node (Node 3)** | 4 | `[asn_num/400000, bgp_prefix_length/32, suspicious_asn_flag, rir_code/5]` (flags high-abuse bulletproof ASNs; RIR encoded `arin=1..afrinic=5`) |
+
+---
+
+### Group 8: Live Host Intelligence Features — WHOIS & ASN/BGP (10 Features)
+
+Live host-intel lookups run in real time during API predictions (in-process `lru_cache(maxsize=4096)` per registered domain) and are kept separate from 20M-row inline training because per-registrar WHOIS queries take ~2–4s each:
+
+| Block | Feature Name | Source / Protocol | Description |
+| :--- | :--- | :--- | :--- |
+| **WHOIS** | `whois_available` | `python-whois` (4–5s timeout) | `1` if authoritative registrar WHOIS response returned a creation date. |
+| **WHOIS** | `domain_age_days` | `creation_date` delta | Days elapsed since domain creation; disposable phishing domains are frequently `< 30–90` days old. |
+| **WHOIS** | `registration_length_days` | `expiration - creation` | Multi-year enterprise registrations (`3–10 yrs`) vs throwaway `1-year` malicious registrations. |
+| **WHOIS** | `recent_domain_flag` | `domain_age_days < 90` | Binary flag alerting on freshly registered infrastructure. |
+| **WHOIS** | `whois_private_flag` | Privacy markers scan | `1` if WHOIS text contains `redacted`, `privacy`, `withheld`, `protect`, `whoisguard`, `private`. |
+| **ASN/BGP** | `asn_available` | DNS + `whois.cymru.com:43` | `1` if DNS A-record resolved and Team Cymru bulk-whois returned an ASN mapping. |
+| **ASN/BGP** | `resolved_ip` | `socket.gethostbyname` | Resolved IPv4 address (also displayed in Host Intelligence UI & graph). |
+| **ASN/BGP** | `asn` | Team Cymru TCP:43 | Autonomous System Number (e.g., `15169` Google, `13335` Cloudflare). |
+| **ASN/BGP** | `bgp_prefix_length` | Team Cymru BGP Prefix | CIDR mask length (`/24`, `/16`, etc.) of the announced IP block. |
+| **ASN/BGP** | `registry` / `asn_country_code` | Team Cymru Metadata | Regional Internet Registry (`arin`, `ripencc`, `apnic`, `lacnic`, `afrinic`) & ISO country code. |
+
+---
+
+### Group 9: Dynamic Browser Sandbox & Autonomous AI Agent Telemetry
+
+Implemented across [`src/url_pipeline/dynamic_escalation.py`](src/url_pipeline/dynamic_escalation.py) (confidence-gated Playwright sandbox: triggers when `confidence < 0.75` or when `phishing`/`malware` confidence `< 0.90`) and [`src/url_pipeline/dynamic_agent.py`](src/url_pipeline/dynamic_agent.py):
+
+1. **Multi-Hop Redirection & Isolation (`Chromium 126.0` via Playwright, with Requests fallback):**
+   - `accept_downloads=False`, `grant_permissions([])`, hard timeouts, `try/finally` browser cleanup, document-only redirect hop tracking, cross-domain jump flagging, and `domain_changed`.
+2. **DOM Structural & Visual Evasion Telemetry (Table 6.2):**
+   - `forms_count`, `password_fields`, `form_action_external` (credential exfiltration to foreign origin), `hidden_iframes` (`display:none`, `visibility:hidden`, or `0/1px`), `external_scripts`, `inline_script_ratio`, `js_obfuscation_score` (normalized inline Shannon entropy), `page_title_brand_mismatch`, `popup_or_redirect_on_load`, `screenshot_perceptual_hash` (`pHash` / MD5 anchor), and disarmed `safe_html` (neutralizes `<script>` and `on*` handlers for safe iframe preview).
+3. **Cryptographic TLS/SSL Handshake Inspection (`check_ssl_certificate`):**
+   - Opens an `ssl.create_default_context()` TCP/TLS socket to extract real certificate `issuer`, `subject`, `tls_version` (`TLSv1.3`/`TLSv1.2`), and detects expired, self-signed, or plaintext HTTP endpoints.
+4. **8 MITRE ATT&CK-Mapped JavaScript AST Threat Patterns (`MALICIOUS_JS_PATTERNS`):**
+
+| AST Pattern Name | Severity | Category | MITRE ATT&CK Technique |
+| :--- | :---: | :--- | :--- |
+| High-Entropy Obfuscated Eval | CRITICAL | Evasion / Obfuscation | `T1027` — Obfuscated Files or Information |
+| ClickFix / PowerShell Delivery Hook | CRITICAL | Drive-by Malware Delivery | `T1059.001` — PowerShell Execution via ClickFix |
+| Document Keylogger Listener | HIGH | Credential Harvesting | `T1056.001` — Keylogging |
+| Password Field Sniffing Hook | HIGH | Credential Harvesting | `T1056` — Input Capture |
+| WebAssembly / In-Browser Cryptominer | HIGH | Resource Hijacking | `T1496` — Resource Hijacking |
+| C2 Webhook Exfiltration Endpoint (Discord/Telegram) | HIGH | Exfiltration | `T1567.002` — Exfiltration to Webhook |
+| Anti-Debugging & DevTools Detection Loop | MEDIUM | Defense Evasion | `T1497.001` — Anti-Analysis Sandbox Evasion |
+| Automated Browser Driver Sniffing (`webdriver`) | MEDIUM | Defense Evasion | `T1497` — Virtualization/Sandbox Evasion |
+
+---
+
+### Group 10: Malware Feature Spaces (Memory, Static PE, API Sequences)
+
+- **Module A (`Obfuscated-MalMem2022.parquet`, 58,058 samples):** **55** Volatility memory-forensics features covering `pslist`, `dlllist`, `handles`, `ldrmodules`, `malfind` code injections, `psxview`, `modules`, `svcscan` services/kernel drivers, and `callbacks`.
+- **Module A' (`bodmas.parquet` + `EMBER-2018`, 734,348 train pool + 199,956 external test):** **2,381** EMBER-v2 PE static features (`F1..F2381`) spanning byte histograms, byte-entropy histograms, PE header/optional header fields, section metadata, imported/exported APIs, and string statistics.
+- **Module A'' (`MalAPI2019`, 7,107 sequences across 8 families):** **500** word-level **1–3 gram TF-IDF** features over space-joined Windows API call ID sequences (`~334` distinct API IDs).
+
+---
+
+## Platform & Application Features
+
+### 1. React 19 SOC Web Dashboard (`frontend/`)
+
+Built with **React 19**, **Vite 8**, **Tailwind CSS 3**, **ReactFlow**, **Recharts**, **Framer Motion**, and **Lucide React**:
+
+| Page / Component | Route | Key Capabilities |
+| :--- | :--- | :--- |
+| **Overview Dashboard** | `/` | Live backend RTT/health, session scan counts, real risk distribution pie chart, classification bar chart, quick navigation |
+| **Threat Analyzer** | `/threat-analyzer` | Dual-mode URL & Binary scanner, abortable requests, quick sample presets, direct escalation to Infrastructure Graph & Dynamic Sandbox |
+| **URL Intelligence** | `/url-intelligence` | Live DNS A-record, WHOIS registrar metadata, ASN/BGP prefix lookup, URL entropy/structural feature breakdown, one-click Dynamic Sandbox launch |
+| **Malware Analysis Workbench** | `/malware-analysis` | Two workbenches: (1) Neural ML Engines (`CIC-MalMem-2022`, `BODMAS/EMBER`, `MalAPI2019` drag-and-drop binary triage + SHA-256) and (2) **CrowdStrike Falcon Sandbox** (live global detonation feed, score/text filters, SHA-256 multi-AV inspector) |
+| **Infrastructure Graph** | `/infrastructure-graph` | Interactive ReactFlow spatial topology (`URL -> Domain -> IP -> ASN` + `TLS Certificate`) powered by `URLInfraGNN` |
+| **Dynamic Analysis Sandbox** | `/dynamic-analysis` | 5-stage pipeline stepper, Autonomous AI Agent reasoning timeline, MITRE JS decompiler, Playwright DOM telemetry matrix, interactive DOM tree inspector, multi-mode sanitized web viewport (`Render` / `Mockup` / `Source`), redirect hops, TLS verification |
+| **Explainable AI (XAI)** | `/explainable-ai` | Interactive SHAP positive/negative impact bar chart, neural gradient layer sensitivity table, faithfulness/monotonicity metrics |
+| **Scan History** | `/scan-history` | Persistent search, risk/type filtering, pagination, slide-over inspection drawer, CSV telemetry export |
+| **AI Security Assistant** | `/security-assistant` + Floating Widget | Full-page SOC copilot + persistent floating widget backed by **Google Gemini 3.5 Flash** and grounded in active scan telemetry |
+| **Settings & Status** | `/settings` | Dynamic FastAPI URL & RTT probe, **31-checkpoint Hugging Face Model Hub** sync & RAM cache warmer, Falcon Sandbox & Gemini status cards |
+
+### 2. FastAPI Backend REST API (`src/api/main.py`)
+
+| Category | Endpoints | Description |
+| :--- | :--- | :--- |
+| **Core & Health** | `GET /`, `GET /api/health`, `GET /health`, `GET /api/metrics` | Serves legacy fallback UI, model readiness flags, and live metrics from `reports/*.json` |
+| **URL Classification** | `POST /api/url/predict`, `/api/analyze-url`, `/api/url/predict-dl`, `/api/url/predict-gnn` | Routes to `HybridURLNet` (`auto`/`dl`), `URLInfraGNN` (`gnn`), or Soft-Voting Ensemble (`ensemble`) with SHAP + WHOIS/ASN |
+| **Explainable AI** | `POST /api/xai/url`, `GET /api/explainability/{scan_id}` | GradientSHAP / GNN feature attributions, normalized bar impacts, and layer gradient sensitivities |
+| **Host Intel & Graph** | `POST /api/intelligence/url`, `POST /api/graph/infrastructure` | Live WHOIS/DNS/ASN profiling and ReactFlow node/edge graph from `URLInfraGNN` |
+| **Dynamic Sandbox** | `POST /api/dynamic-analysis/start`, `/api/url/escalate`, `/api/sandbox/inspect` | Autonomous Dynamic Security Agent (Playwright Chromium, JS AST decompiler, DOM & TLS verification) |
+| **Falcon Sandbox (v2)** | `GET /api/hybrid-analysis/status`, `/feed`, `/hash/{sha256}`, `/environments` | Hybrid Analysis API v2 account verification, live global detonation feed, hash lookup, guest OS list |
+| **Malware Triage** | `POST /api/analyze-malware`, `GET /api/malware/modules-status`, `/sample`, `/static_sample` | File upload SHA-256 triage + real held-out SHAP samples for dynamic & static malware models |
+| **History & Copilot** | `GET/POST /api/history`, `POST /api/chat` | Persistent `reports/scan_history.json` store and Google Gemini 3.5 Flash scan-aware chat |
+| **HF Model Registry** | `GET /api/models/hf-status`, `POST /api/models/load-from-hf`, `POST /api/models/reload-cache` | Real-time status of all 31 HF artifacts, selective/bulk pull from `siddudavant/cyberxai-models`, and in-memory warmup |
+
+### 3. Explainable AI (XAI) Engine Comparison
+
+| Engine | Model Target | Attribution Method | Typical Latency | Output Contract |
+| :--- | :--- | :--- | :---: | :--- |
+| **GradientSHAP (`explain_dl.py`)** | `HybridURLNet` (PyTorch) | `shap.GradientExplainer` over neutral zero-scaled background | **< 0.4s** | `top_features`, `base_value`, `net_push`, `probabilities` |
+| **GAT Layer-2 Attention (`explain_gnn.py`)** | `URLInfraGNN` (PyTorch GAT) | Exact Layer-2 attention coefficients $\alpha_{ij}$ (`URL->Self`, `URL->Domain`, `Domain->IP`, `IP->ASN`) | **< 0.3s** | `graph_attributions`, `graph_topology`, `probabilities` |
+| **TreeSHAP (`explain.py`, `malware_pipeline/explain*.py`)** | URL Voting RF, Dynamic RF, Static XGBoost | Exact `shap.TreeExplainer` (`max_depth=8` XGBoost for static PE; unconstrained RF for URL/dynamic) | `< 1s` (XGB/Dyn) / `60–90s` (Full URL RF) | `top_features` with `shap_value`, `raw_value`, `direction` |
+| **Shallow Surrogate (`train_shap_surrogate.py`)** | Optional URL RF explainer | `max_depth=8, n_estimators=100` RF trained on same feature space | **< 35ms** | Fast local attribution surrogate (`url_shap_surrogate_rf.joblib`) |
+
+### 4. External Threat Intelligence & AI Services
+
+- **CrowdStrike Falcon Sandbox (Hybrid Analysis API v2)** ([`src/url_pipeline/hybrid_analysis_client.py`](src/url_pipeline/hybrid_analysis_client.py)): Verifies API key/quota, streams live global detonation feeds (`GET feed/latest`), queries multi-engine AV reports by SHA-256 (`GET overview/{sha256}/summary`), and lists guest OS environments (`GET system/environments`).
+- **Google Gemini 3.5 Flash SOC Copilot** ([`src/api/chatbot.py`](src/api/chatbot.py)): Configurable via `GEMINI_API_KEY` and `GEMINI_MODEL` (default `gemini-3.5-flash`) with multi-turn conversation history, scan telemetry grounding, and automatic heuristic fallback when offline.
+
+---
+
+## Dataset Corpus & Threat Feed Consolidation
+
+Multiple multi-source consolidation pipelines maintain clean, deduplicated, canonical 4-class URL corpora (`benign`, `phishing`, `defacement`, `malware`):
+
+1. **`src/url_pipeline/build_combined_dataset.py` (32-Source SQLite Priority Merger):** Streams up to 32 public Kaggle, Hugging Face, PhishTank, Abuse.ch ThreatFox/URLhaus, and OTX sources through an indexed on-disk SQLite table (`PRIMARY KEY(url)`), resolving cross-source label conflicts deterministically by source priority and sorting `A–Z` without exhausting 16 GB RAM.
+2. **`src/merge_sort_datasets.py` (17-Source Metadata-Enriched Merger):** Outputs `Dataset/merged_clean_urls.csv` and `Dataset/merged_clean_urls.pkl` with `published_year`, `how_detected`, and `who_published_flags`, while preserving `defacement` priority (`LABEL_PRIORITY`: `defacement=10`, `malware=5`, `phishing=4`, `benign=1`) and cleaning intermediate raw files.
+3. **`src/url_pipeline/merge_new_threat_data.py` & `src/fetch_abusech_data.py`:** Incrementally fetches authenticated ThreatFox + URLhaus exports, deduplicates against PhishTank and `merged_clean_urls.csv`, and emits clean delta records to `Dataset/fresh_threat_intel_update.csv`.
+
+<details>
+<summary><strong>Merged URL & Malware Data Sources Summary (click to expand)</strong></summary>
+
+| Domain | Dataset / Feed | Role / Taxonomy | Scale |
+| :--- | :--- | :--- | :--- |
+| **URL Threats** | PhishTank (`verified_online.csv`) & OpenPhish | Human-verified & live zero-day `phishing` feeds | Continuous live feeds |
+| **URL Threats** | Abuse.ch ThreatFox (`threatfox_full.csv`) & URLhaus (`file.csv.txt`) | Authenticated `malware` C2 & payload delivery IOCs | Continuous live feeds |
+| **URL Threats** | Tranco Top 1M (`tranco_top_1m.csv`) & Authoritative Root Domains | Gold-standard `benign` apex domains | 1,000,000+ domains |
+| **URL Corpora** | Kaggle `malicious_phish.csv`, `MUD_malicious_urls_2026_V2.csv`, `zhengxian_12M`, `somanshumahajan_6M`, `siddharthkumar25`, `shashwatwork`, `PhiUSIIL` (polarity-inverted), HF `phreshphish` (2025–2026), `Naren1704`, `kmack` | Multi-class (`benign`, `phishing`, `defacement`, `malware`) & binary corpora | 20.9M–27.0M combined rows |
+| **Malware (Dyn)** | `Obfuscated-MalMem2022.parquet` | 55 Volatility memory features (`Benign`, `Spyware`, `Trojan`, `Ransomware`) | 58,058 rows |
+| **Malware (PE)** | `bodmas.parquet` + `train/test_ember_2018_v2_features.parquet` | 2,381 EMBER static PE features (`Benign` vs `Malware`) | 734,348 train + 199,956 external test |
+| **Malware (API)** | `Dataset/malapi2019` | Windows API 1,000-call sequences across 8 malware families | 7,107 samples |
 
 </details>
 
-### Training on the 20.9M Actual URL Dataset (`Dataset/combined_urls.csv`)
+---
 
-The model is trained directly on the project's **20.9M URL corpus** (`20,946,068 rows` sourced and deduplicated across PhishTank, URLhaus, ThreatFox, Hugging Face, and Kaggle threat feeds). 
+## Private Hugging Face Model Registry
 
-To train over this massive 20.9M-scale dataset without hardware crashes or timeouts:
-1. **High-Throughput Parallel Featurizer:** Built with an optimized Shannon Entropy engine (`collections.Counter` + `math.log2`, replacing slow pandas overhead) and parallel multiprocessing across all CPU cores, achieving high-throughput feature extraction (>60,000 URLs/sec).
-2. **PyTorch Mini-Batch Streaming:** Streams tensors via `DataLoader` with batch sizes 1024–2048, maintaining peak memory strictly bounded (<3.8 GB) even across 20M+ rows.
-3. **Multi-Token Cloud Acceleration:** Dispatched to Kaggle GPU compute via automated kernel runner (`src/kaggle_push_kernel_dl.py`) across 3 rotating API tokens (`access_token`, `access_token_2`, `access_token_3`).
+All **31 production checkpoints, scalers, encoders, vectorizers, and metrics JSONs** are stored in the **private** Hugging Face repository [`siddudavant/cyberxai-models`](https://huggingface.co/siddudavant/cyberxai-models) (never committed to git). On a fresh clone, [`src/model_registry.py`](src/model_registry.py) downloads any missing artifact automatically via `HF_TOKEN`.
 
-#### Empirical Performance on Actual Dataset (`Dataset/combined_urls.csv`):
+| Category | Synchronized Files | Engine / Format |
+| :--- | :--- | :--- |
+| **URL Deep Learning** | `url_dl_model.pt` (`208 KB`), `url_dl_scaler.joblib`, `url_dl_label_encoder.joblib`, `url_dl_metrics.json` | PyTorch (`HybridURLNet`) + Scikit-Learn |
+| **URL Graph Neural Net** | `url_gnn_model.pt` (`72 KB`), `url_gnn_scaler.joblib`, `url_gnn_label_encoder.joblib`, `url_gnn_metrics.json` | Pure PyTorch (`URLInfraGNN`) + Scikit-Learn |
+| **URL Ensemble & XAI** | `url_voting_classifier.joblib` (`82.6 MB`), `url_model.joblib` (`82.6 MB`), `url_scaler.joblib`, `url_label_encoder.joblib`, `url_ngram_vectorizer.joblib`, `url_selected_features.json`, `url_shap_surrogate_rf.joblib` (`1.71 MB`), `url_module_b_metrics.json` | Scikit-Learn + XGBoost + TreeSHAP |
+| **Malware Dynamic** | `malware_dynamic_rf_multiclass_family.joblib` (`282.7 MB`), `malware_dynamic_xgb_multiclass_family.joblib` (`5.74 MB`), `malware_dynamic_rf_binary_benign_vs_malware.joblib` (`1.60 MB`), `malware_dynamic_xgb_binary_benign_vs_malware.joblib` (`279 KB`), binary & multiclass label encoders, `malware_module_a_dynamic_baseline_metrics.json` | Random Forest + XGBoost (`CIC-MalMem-2022`) |
+| **Malware Static PE** | `malware_static_rf.joblib` (`531.4 MB`), `malware_static_xgb.joblib` (`2.75 MB`), `malware_module_a_static_baseline_metrics.json` | Random Forest + XGBoost (`BODMAS + EMBER`) |
+| **Malware API Sequence** | `malware_api_sequence_rf.joblib` (`110.9 MB`), `malware_api_sequence_xgb.joblib` (`6.80 MB`), `malware_api_sequence_vectorizer.joblib`, `malware_api_sequence_label_encoder.joblib`, `malware_module_a_api_sequence_metrics.json` | Random Forest + XGBoost + TF-IDF (`MalAPI2019`) |
 
-| Metric | Score | Details |
-|---|---|---|
-| **Dataset Scale** | **20.9M Rows** | Evaluated on stratified holdout test split |
-| **Test Accuracy** | **89.7%** | Multi-class accuracy across all 4 threat classes |
-| **Macro F1-Score** | **0.8945** | Balanced performance across minority and majority classes |
-| **Malware F1** | **0.959** | Precision: 98.3%, Recall: 93.5% |
-| **Phishing F1** | **0.886** | Precision: 88.9%, Recall: 88.3% |
-| **Defacement F1** | **0.874** | Precision: 84.9%, Recall: 90.2% |
-| **Benign F1** | **0.859** | Precision: 85.3%, Recall: 86.5% |
+---
 
-All model weights and evaluation records are persisted in `models/url_dl_model.pt` and `reports/url_dl_metrics.json`.
+## MLOps, CI/CD, Kaggle Cloud Compute & Green Computing
 
-WHOIS/ASN host-intelligence features are **not** part of the trained model (both are live,
-per-domain network lookups, infeasible inline at 20M+-row scale) — they're a separate, supplementary
-layer: shown alongside predictions in the API/frontend, and available for smaller-scale ablation
-studies. See [Host intelligence enrichment](#host-intelligence-enrichment-whois--asn) below.
+- **Apache Airflow MLOps DAG ([`dags/cyberxai_ml_training_dag.py`](dags/cyberxai_ml_training_dag.py), [`docker-compose.airflow.yml`](docker-compose.airflow.yml)):** 5-stage pipeline `validate_dataset >> extract_hybrid_features >> train_hybridurlnet_model >> evaluate_and_quality_gate >> deploy_to_huggingface_hub` backed by PostgreSQL 15 + `LocalExecutor`, plus standalone Python execution when no Airflow daemon is running.
+- **GitHub Actions CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):** Byte-compiles every file in `src/` and verifies `importlib.import_module()` succeeds across every module on Python 3.10.
+- **Kaggle Cloud Training & Multi-Account Rotation (`src/kaggle_*.py`):** Supports rotating tokens (`access_token`, `access_token_2`, `access_token_3`) for GPU training of `HybridURLNet`, `URLInfraGNN`, URL+WHOIS Ensemble, static/dynamic/API-sequence malware models, and bulk WHOIS/ASN enrichment (`11.7M` unique domains covered for ASN, `~998k` domains cached for WHOIS).
+- **Green Computing & OOM Elimination:**
+  - Replaced 40M-row synthetic SMOTE + float64 TF-IDF densification (which previously exceeded 30 GB RAM and triggered SIGKILL) with streaming PyTorch `DataLoader`s and class-weighted Cross-Entropy (`< 3 GB` RAM / `< 1 GB` VRAM).
+  - Compact neural models (`< 50K` params for `HybridURLNet`, `hidden_dim=64` for `URLInfraGNN`) with built-in PyTorch dynamic `INT8` quantization (`model.quantize()`).
+  - Confidence-gated Playwright sandbox escalation (`should_escalate()`), avoiding expensive headless browser spins for high-confidence benign URLs.
 
-Run it:
+---
+
+## Quick Start & Usage
+
+### 1. Environment Configuration
+
 ```bash
-# 1. Train on the actual 20.9M dataset (full or stratified scale):
-python src/url_pipeline/train_dl.py --data "Dataset/combined_urls.csv" --sample-size 100000 --epochs 10
-
-# 2. Push full 20.9M cloud GPU training kernel to Kaggle:
-python src/kaggle_push_kernel_dl.py access_token_2 siddhantudavant
-
-# 3. Real-time inference + neural explanation (<0.3s):
-python src/url_pipeline/explain_dl.py "http://paypal-security-verification.cf/login.php"
+cp .env.example .env
+# Populate HF_TOKEN, GEMINI_API_KEY, ABUSE_CH_AUTH_KEY, HYBRID_ANALYSIS_API_KEY, and KAGGLE_API_TOKEN_*
+pip install -r requirements.txt
 ```
 
-### Heterogeneous Graph Neural Network (`URLInfraGNN`)
-
-To capture coordinated threat campaigns and bulletproof hosting infrastructure, the system introduces **`URLInfraGNN`** (`src/url_pipeline/gnn_model.py`), a pure PyTorch **Graph Attention Network (GAT)** that models relational infrastructure topology:
-
-$$\alpha_{ij} = \frac{\exp\left(\text{LeakyReLU}\left(\mathbf{a}^T [\mathbf{W}h_i \parallel \mathbf{W}h_j]\right)\right)}{\sum_{k \in \mathcal{N}(i)} \exp\left(\text{LeakyReLU}\left(\mathbf{a}^T [\mathbf{W}h_i \parallel \mathbf{W}h_k]\right)\right)}$$
-
-- **Heterogeneous Nodes:**
-  - **URL Node:** 45-dimensional hybrid lexical, structural, and statistical static features.
-  - **Domain Node:** 8-dimensional WHOIS registration metadata, domain entropy, and TLD abuse flags.
-  - **IP Node:** 4-dimensional IPv4 address routing structure and octet encodings.
-  - **ASN Node:** 4-dimensional BGP Autonomous System intelligence and RIR registry allocations.
-- **Relational Edges:** Bidirectional message-passing edges: `(URL ↔ Domain ↔ IP ↔ ASN)`.
-- **Explainability via Graph Attention:** Rather than treating infrastructure as black-box metadata, the GAT layer outputs normalized attention weights $\alpha_{ij}$, revealing whether the classification was triggered by lexical patterns (55%), domain registration anonymity (45%), or suspicious hosting ASNs.
-- **Zero C++ Dependencies:** Built purely on native PyTorch tensor operations with self-attention and LayerNorm, running seamlessly on both CPU and cloud GPUs without requiring external `torch-geometric` or `dgl` binaries.
+### 2. Sync Private Models & Launch FastAPI Backend
 
 ```bash
-# Train URLInfraGNN on actual dataset samples:
-python src/url_pipeline/train_gnn.py --data "Dataset/combined_urls.csv" --sample-size 10000 --epochs 6
+# Optional: sync local trained models to private Hugging Face Hub repo
+python scripts/sync_all_models_to_hf.py
 
-# Real-time GNN inference with graph topology and attention attributions:
+# Start FastAPI backend (auto-downloads any missing checkpoints from HF Hub if HF_TOKEN is set)
+uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+```
+
+### 3. Launch React 19 SOC Dashboard
+
+```bash
+cd frontend
+npm install
+npm run dev
+# Open http://localhost:5173 (or http://127.0.0.1:8000/ for fallback HTML view)
+```
+
+### 4. CLI Inference, Training & MLOps Commands
+
+```bash
+# URL inference + GradientSHAP explanation (<0.4s)
+python src/url_pipeline/explain_dl.py "http://paypal-security-check.cf/login.php"
+
+# URLInfraGNN graph inference + Layer-2 GAT attention weights
 python src/url_pipeline/explain_gnn.py "http://paypal-security-check.cf/login.php"
+
+# Dynamic headless browser escalation (Playwright)
+python src/url_pipeline/dynamic_escalation.py "https://example.com"
+
+# Train HybridURLNet or URLInfraGNN locally
+python src/url_pipeline/train_dl.py --data "Dataset/merged_clean_urls.csv" --sample-size 100000 --epochs 10
+python src/url_pipeline/train_gnn.py --data "Dataset/merged_clean_urls.csv" --sample-size 15000 --epochs 8
+
+# Run standalone Airflow training DAG or spin up Docker Compose stack
+python dags/cyberxai_ml_training_dag.py
+docker compose -f docker-compose.airflow.yml up -d
 ```
-
-### Module A — dynamic (memory-forensics) malware classifier (`src/malware_pipeline/train_dynamic_baseline.py`)
-
-Trained on CIC-MalMem-2022's memory-forensics features (process/DLL/handle/injection/service
-statistics extracted via Volatility from a memory dump — not live sandbox traces).
-
-| Task | Accuracy | Macro F1 | Macro ROC-AUC |
-|---|---|---|---|
-| Benign vs. Malware (binary) | 100% | 1.00 | 1.00 |
-| Malware family — Ransomware/Spyware/Trojan/Benign (4-class) | 87.8% | 0.815 | 0.973 |
-
-Ransomware and Trojan are the weakest pair (FNR ~26-28%, meaningful mutual confusion); Spyware is
-best-separated. Top SHAP features: `svcscan.nservices`, `svcscan.shared_process_services`,
-`handles.avg_handles_per_proc`, `svcscan.kernel_drivers` — malware families in this corpus tend to
-install/hook services and hold unusual handle counts. Full metrics:
-`reports/malware_module_a_dynamic_baseline_metrics.json`.
-
-A richer real-behavioral dataset (Avast-CTU CAPE, 48,976 genuine CAPEv2 sandbox reports with
-registry/network/process-tree data and 10 real family labels) was identified as a strong upgrade
-path but requires a new feature-extraction pipeline (parsing raw JSON reports, not a ready CSV) —
-deferred, not started.
-
-Run it: `python src/malware_pipeline/train_dynamic_baseline.py`
-
-### Module A' — static (PE-feature) malware classifier (`src/malware_pipeline/train_static_baseline.py`)
-
-Trained on BODMAS + EMBER-2018 (identical 2,381-dimension EMBER-style feature schema — BODMAS was
-built on EMBER's own extractor specifically for cross-compatibility), with EMBER's own held-out test
-set kept as a genuine external/unseen validation split (different vintage than the training pool).
-
-| Split | Accuracy | Macro F1 | ROC-AUC |
-|---|---|---|---|
-| Internal holdout (146,870 rows) | 98.1% | 0.980 | 0.998 |
-| External EMBER test set (199,956 rows) | 96.6% | 0.966 | 0.994 |
-
-Tree depth capped (`max_depth=16`) from the start, applying the lesson from the URL module's SHAP
-serving-speed incident before it could recur here. Full metrics:
-`reports/malware_module_a_static_baseline_metrics.json`.
-
-Run it: `python src/malware_pipeline/train_static_baseline.py`
-
-### Module A'' — API-call-sequence malware family classifier (`src/malware_pipeline/train_api_sequence_baseline.py`)
-
-Trained on MalAPI2019 (7,107 samples, 8 malware families — Adware/Backdoor/Downloader/Dropper/
-Spyware/Trojan/Virus/Worms, no benign class). Word-level TF-IDF (1-3 grams, 500 features) over
-space-joined API-call-ID sequences, RF + XGBoost.
-
-| Metric | Value |
-|---|---|
-| Accuracy | 67.3% |
-| Macro Precision | 69.5% |
-| Macro Recall | 68.3% |
-| Macro F1 | 68.9% |
-| Macro ROC-AUC | 0.918 |
-
-**This is the weakest module.** Trojan (FNR 50%) and Spyware (FNR 44%) are especially poorly
-separated. The Oliveira Kaggle dataset (42,797 malware sequences, same format as MalAPI2019) was
-evaluated as a fix but rejected — it only has binary malware/benign labels, no family breakdown, so
-it can't supply ground truth for this 8-class task. The Avast-CTU CAPE dataset (see Module A above)
-would also help here, since it includes real family-labeled API sequences at larger scale. Full
-metrics: `reports/malware_module_a_api_sequence_metrics.json`.
-
-Run it: `python src/malware_pipeline/train_api_sequence_baseline.py`
-
-### Module C — URL dynamic/sandbox escalation (`src/url_pipeline/dynamic_escalation.py`)
-
-Runs a suspicious/low-confidence URL through a headless, isolated Chromium context (Playwright) and
-captures redirect chain and domain changes, login-form presence and cross-domain form submission,
-external-resource/script counts, inline-script obfuscation score, popup/dialog triggers, page-title/
-brand mismatch, a screenshot perceptual hash, and TLS usage. Safety controls: hard per-navigation
-timeout, blocked downloads, no granted permissions, no execution of anything downloaded.
-`should_escalate()` gates on prediction confidence (escalate when confidence is below threshold, or
-the class is phishing/malware below 90% confidence).
-
-Setup:
-```
-pip install playwright imagehash
-set PLAYWRIGHT_BROWSERS_PATH=D:\path\to\ms-playwright
-python -m playwright install chromium
-```
-Run it: `python src/url_pipeline/dynamic_escalation.py "http://example-suspicious.com"`
-
-### Host intelligence enrichment (WHOIS + ASN)
-
-Two supplementary, live-lookup feature families — domain registration data (WHOIS) and hosting
-infrastructure data (ASN/IP-prefix, from Ma et al.'s malicious-URL research) — shown in the frontend
-alongside predictions, never part of the trained model itself (both require per-domain network
-lookups, infeasible inline at 20M+-row training scale).
-
-**Bulk coverage status** (against the current dataset's 11,744,984 unique registered domains):
-- **ASN**: 100% coverage (all 11.7M domains attempted), 48.8% resolved to a real ASN — the rest are
-  domains that don't resolve via DNS (dead/parked/typosquat domains, expected at this scale). Fast
-  because Team Cymru's bulk-whois service (`whois.cymru.com:43`) has no per-registrar rate-limit
-  fragmentation — one batched TCP query covers up to ~1000 IPs.
-- **WHOIS**: ~8.5% coverage (997,994/11.7M domains). Much slower — every registrar rate-limits
-  independently, so full coverage at this domain count isn't practically achievable the way ASN's
-  was; chained across multiple Kaggle sessions, still partial.
-
-### Web application (`src/api/main.py`, `frontend/code.html`)
-
-FastAPI backend serving all four trained modules over HTTP, hosting the dashboard itself
-(`GET /` returns `frontend/code.html`) so opening `http://127.0.0.1:8000/` needs no CORS setup.
-
-Endpoints:
-```
-GET  /                      the dashboard (frontend/code.html)
-GET  /api/health            liveness + which models are loaded
-GET  /api/metrics           real, current accuracy/ROC-AUC etc., read live from reports/*.json
-POST /api/url/predict       {url} -> Module B prediction + SHAP + live WHOIS/ASN host-intel lookup
-POST /api/url/escalate      {url} -> Module C dynamic/sandbox analysis
-GET  /api/malware/sample           ?task=binary|family -> Module A prediction + SHAP on a real held-out row
-GET  /api/malware/static_sample    -> Module A' prediction + SHAP on a real EMBER-test row
-POST /api/chat              scan-aware chatbot (Gemini-backed, hidden behind a feature flag)
-```
-Run it:
-```
-set PLAYWRIGHT_BROWSERS_PATH=D:\path\to\ms-playwright
-uvicorn src.api.main:app --port 8000
-```
-then open `http://127.0.0.1:8000/`. The dashboard's **Threat Analyzer** tab is fully real/API-backed
-(the four "quick demo sample" buttons are the only intentionally-hardcoded illustrative exception);
-**3D Visualizer** is a decorative, clearly-labeled Three.js rendering, not live data. The **Host
-Intelligence** panel shows the live WHOIS/ASN lookup for the last real URL scan.
-
-## Kaggle infrastructure & compute
-
-Every training run for all four modules happens on Kaggle's cloud compute, not this machine — both
-because the datasets (20M+ rows) and models (up to 14.6GB) exceed what this laptop can reliably hold
-in memory, and per explicit project decision so training survives the laptop sleeping/closing.
-`src/kaggle_*.py` scripts handle uploading datasets, pushing kernels, and polling/downloading results.
-
-**Three Kaggle accounts are in active rotation**, handling the distributed model training:
-- **Account 3 (`robotking007`, active in your browser, `access_token_3`):**
-  - **URL Deep Learning (`HybridURLNet`):** [cyberxai-url-deep-learning-training](https://www.kaggle.com/code/robotking007/cyberxai-url-deep-learning-training) (**Completed** - 88.61% accuracy, GPU)
-  - **URL Graph Neural Network (`URLInfraGNN`):** [cyberxai-url-infrastructure-gnn-training](https://www.kaggle.com/code/robotking007/cyberxai-url-infrastructure-gnn-training) (**Completed** - Version #2, CPU)
-  - **Dataset:** [robotking007/cyberxai-combined-urls](https://kaggle.com/datasets/robotking007/cyberxai-combined-urls)
-- **Account 1 (`siddudavant`, `access_token`):**
-  - **Dynamic Malware Module A:** [cyberxai-dynamic-malware-training](https://www.kaggle.com/code/siddudavant/cyberxai-dynamic-malware-training) (**Completed**)
-  - **Static Malware Module A':** [cyberxai-static-malware-training](https://www.kaggle.com/code/siddudavant/cyberxai-static-malware-training) (Running)
-  - **API Sequence Malware Module A'':** [cyberxai-api-sequence-training](https://www.kaggle.com/code/siddudavant/cyberxai-api-sequence-training) (**Completed**)
-- **Account 2 (`siddhantudavant`, `access_token_2`):**
-  - **Cloud URL Deep Learning Pipeline:** [cyberxai-url-module-b-deep-learning-training](https://www.kaggle.com/code/siddhantudavant/cyberxai-url-module-b-deep-learning-training) (**Completed**)
-
-### Hugging Face Model Hub
-
-All production model weights, encoders, scalers, and evaluation metrics across all modules are published and version-controlled on the Hugging Face Model Hub:
-- **Hugging Face Model Repository:** [siddudavant/cyberxai-models](https://huggingface.co/siddudavant/cyberxai-models)
-- **Model Card:** Full architecture specifications, parameter counts, evaluation matrices, and multi-modal quickstarts.
-- **Transfer Utility:** Automated synchronization script at [`src/upload_all_models_to_hf.py`](file:///d:/College/3rd%20Year/Semester%205/EDI%20-%203/Code/Explainable-Multi-Class-Malicious-URL-Detection-Using-Hybrid-Features-and-Ensemble-Machine-Learning/src/upload_all_models_to_hf.py).
-
-Tokens are stored securely in `~/.kaggle/` (`access_token`, `access_token_2`, `access_token_3`) and mapped in `.env`.
-
-### OOM crash history (URL module training)
-
-The URL training pipeline crashed from out-of-memory four separate times while scaling up to the
-current ~21M-row dataset, each a genuinely different root cause (fixed in order, each verified before
-moving to the next):
-
-1. **Redundant data copies.** The original code built static features, n-gram features, a
-   concatenated "full" copy, and a selected-columns "sel" copy — for both train and test — without
-   freeing any precursor until the very end. Up to ~7 large, nearly-redundant copies alive
-   simultaneously (estimated ~35-40GB peak). Fixed by processing train/test sequentially and deleting
-   each precursor immediately after its last use.
-2. **float64 densification.** `TfidfVectorizer`'s sparse output defaults to float64; densifying a
-   150-feature n-gram block at ~16.7M rows needs ~19GB in float64 alone. Fixed by casting to float32
-   *before* densifying (not after), and pulling the n-gram vocabulary back from 150 to 100 features.
-3. **Per-row Python object overhead.** `urls.apply(extract_features_row)` builds one Python dict per
-   row before any DataFrame conversion — a dict's fixed per-instance overhead means 16.7M raw dicts
-   need far more memory than the final compact float32 array would, entirely independent of fix #2.
-   Fixed by processing in 500K-row chunks, converting each chunk to a compact array immediately.
-4. **Unconstrained-depth Random Forests.** Both accounts survived static feature extraction (~7h)
-   after fix #3, then crashed identically at the feature-importance-ranking RF fit — 200
-   unconstrained-depth trees on the full 16.7M-row split grow enormous. Fixed by subsampling the selector
-   to 2M rows with `max_depth=20`, and pre-emptively applying `max_depth=30, max_samples=0.3` to the
-   main production RF.
-5. **Full-matrix TF-IDF Densification & Monolithic In-Memory Arrays.** Account 2 survived static feature
-   extraction and RF feature ranking, but was killed (`Killed`, SIGKILL) by the Linux OOM killer at
-   `Building char n-gram TF-IDF block (max_features=100, fit on train only)` due to holding 16.7M static
-   rows alongside raw strings and sparse-to-dense TF-IDF structures.
-   
-   **The Deep Learning Solution:** Rather than fighting monolithic 30GB+ in-memory scikit-learn matrices,
-   a lightweight PyTorch Deep Neural Network (`HybridURLNet`, 48,324 parameters) was implemented in
-   `src/url_pipeline/dl_model.py` and `train_dl.py`. Because PyTorch streams mini-batches via `DataLoader`
-   (batch size 1,024–2,048), peak memory is strictly bounded (< 3GB RAM / 1GB VRAM).
-
-### Green Computing Choices (Reframed for Deep Learning)
-
-- **Lightweight / Quantized Deep Learning over Heavy Transformers:**
-  Instead of deploying multi-billion parameter foundation models or heavy LLMs, the system employs a compact
-  48k-parameter PyTorch Tabular Residual Network (`HybridURLNet`) with optional INT8 dynamic quantization,
-  achieving sub-millisecond inference and minimal watt-hour consumption.
-- **Class-Weighted Cross-Entropy over 40M-Row Synthetic SMOTE:**
-  Eliminates the compute and memory explosion of generating ~40M synthetic rows by balancing minority-class
-  gradients directly in the PyTorch loss function.
-- **Escalate only when needed:**
-  The sandbox browser (Module C) runs only for low-confidence URLs, not every request.
-- **Static URL features:**
-  Computed directly from the URL string — no live page fetch, no excess network energy.
-- **Multi-Token Kaggle Cloud Rotation:**
-  All heavy training runs on Kaggle cloud GPUs using three rotating API tokens (`access_token`, `access_token_2`,
-  `access_token_3`) stored in `~/.kaggle/` and `.env`, preventing local hardware degradation and thermal load.
-
-
-## Data policy
-
-`Dataset/` and `models/` are **never committed to git** (multi-gigabyte files don't belong in
-version control) — `models/` artifacts are hosted on a private Hugging Face Hub repo and
-auto-downloaded on demand by `model_registry.py` when missing locally. Secrets (`HF_TOKEN`,
-`KAGGLE_API_TOKEN`, `GEMINI_API_KEY`, `ABUSE_CH_AUTH_KEY`) live in a local, gitignored `.env` file,
-with cloud-deploy code paths checking real environment variables first and falling back to `.env`
-for local development.
-
-## Not yet started / explicitly out of scope
-
-- A fusion layer correlating malware and URL risk scores into a single incident record.
-- Wiring the completed ASN/partial WHOIS enrichment caches into the actual trained feature matrix
-  (currently cache-only, used for live single-URL lookups and ablation studies, not bulk training —
-  a deliberate, documented scope decision, not an oversight).
-- Upgrading Module A (dynamic malware) and Module A'' (API-sequence) with the Avast-CTU CAPE dataset
-  — identified as a strong option, deferred pending a new feature-extraction pipeline.
-- SOREL-20M was confirmed public and reachable but its `pe_metadata` shard alone is 515GB+, far
-  beyond what fits on this project's infrastructure — not downloaded. EMBER-2018 (already used in
-  Module A') serves the same static-feature purpose at a fraction of the size.

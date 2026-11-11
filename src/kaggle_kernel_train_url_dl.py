@@ -14,7 +14,7 @@ Deep Learning model (HybridURLNet) on GPU.
 from __future__ import annotations
 
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import gc
 import json
 import math
@@ -263,6 +263,10 @@ def find_data_file() -> Path:
     raise FileNotFoundError("Could not find merged_clean_urls.csv or combined_urls.csv anywhere in /kaggle/input")
 
 
+def _extract_worker(url_chunk):
+    return [extract_features_row(u) for u in url_chunk]
+
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     log(f"Starting Kaggle URL Deep Learning training pipeline on {device}")
@@ -277,14 +281,8 @@ def main():
         label_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
         df = df.dropna(subset=[url_col, label_col])
     else:
-        log("Streaming dataset from CSV in chunks with stratified balance across all 27M rows...")
+        log("Streaming dataset from CSV across 100% full dataset (no subsampling)...")
         chunks = []
-        # Retain 100% of minority attack classes (malware & defacement),
-        # and sample 100k benign + 100k phishing uniformly across the full dataset.
-        target_per_maj = 100_000
-        total_rows_approx = 27_022_952
-        maj_sample_rate = target_per_maj / max(total_rows_approx / 2, 1)
-
         chunksize = 1_000_000
         for i, chunk in enumerate(pd.read_csv(data_file, chunksize=chunksize)):
             col_map = {c.lower(): c for c in chunk.columns}
@@ -297,15 +295,9 @@ def main():
             chunk = chunk[chunk[u_col].str.len() > 3]
             chunk = chunk[chunk[l_col].isin(["benign", "phishing", "malware", "defacement"])]
 
-            # Separate minority vs majority classes
-            is_minority = chunk[l_col].isin(["defacement", "malware"])
-            minority_df = chunk[is_minority]
-            majority_df = chunk[~is_minority].sample(frac=maj_sample_rate, random_state=42 + i) if not chunk[~is_minority].empty else chunk[~is_minority]
-
-            sampled_chunk = pd.concat([minority_df, majority_df])
-            chunks.append(sampled_chunk[[u_col, l_col]])
-            if (i + 1) % 5 == 0 or (i + 1) >= 27:
-                log(f"  Chunk {i+1}: running sampled total = {sum(len(c) for c in chunks):,} rows")
+            # Retain 100% of rows without downsampling
+            chunks.append(chunk[[u_col, l_col]])
+            log(f"  Chunk {i+1}: processed {len(chunk):,} rows (running total = {sum(len(c) for c in chunks):,} rows)")
 
         df = pd.concat(chunks, ignore_index=True)
         del chunks
@@ -315,29 +307,31 @@ def main():
         url_col = col_map.get("url", "url")
         label_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
 
-    log(f"Total balanced dataset rows: {len(df):,}")
+    log(f"Total full dataset rows: {len(df):,}")
     log(f"Class distribution:\n{df[label_col].value_counts()}")
 
-    log("Extracting 45 hybrid features using in-memory ThreadPoolExecutor...")
+    log("Extracting 45 hybrid features using parallel ProcessPoolExecutor across full dataset...")
     urls = df[url_col].tolist()
     labels = df[label_col].tolist()
     del df
     gc.collect()
 
-    batch_chunk_size = 25000
-    all_feature_rows = []
-    t_feat_start = time.time()
+    n_workers = min(os.cpu_count() or 4, 8)
+    sub_chunk_size = 10000
+    sub_chunks = [urls[i:i + sub_chunk_size] for i in range(0, len(urls), sub_chunk_size)]
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for b_start in range(0, len(urls), batch_chunk_size):
-            b_urls = urls[b_start:b_start + batch_chunk_size]
-            batch_rows = list(executor.map(extract_features_row, b_urls))
-            all_feature_rows.extend(batch_rows)
-            log(f"  Extracted {min(b_start + len(b_urls), len(urls)):,} / {len(urls):,} URLs ({time.time() - t_feat_start:.1f}s)")
+    dfs = []
+    t_feat_start = time.time()
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        for idx, chunk_res in enumerate(executor.map(_extract_worker, sub_chunks)):
+            dfs.append(pd.DataFrame(chunk_res, dtype=np.float32))
+            if (idx + 1) % 5 == 0 or (idx + 1) == len(sub_chunks):
+                done_count = min((idx + 1) * sub_chunk_size, len(urls))
+                log(f"  Extracted {done_count:,} / {len(urls):,} URLs ({time.time() - t_feat_start:.1f}s)")
 
     log("Constructing feature DataFrame...")
-    X_all = pd.DataFrame(all_feature_rows, dtype=np.float32).fillna(0.0)
-    del all_feature_rows, urls
+    X_all = pd.concat(dfs, ignore_index=True).fillna(0.0)
+    del dfs, urls
     gc.collect()
 
     feature_names = list(X_all.columns)

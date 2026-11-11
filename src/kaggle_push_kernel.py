@@ -28,7 +28,7 @@ TOKEN_PATH = Path.home() / ".kaggle" / TOKEN_FILE
 
 KERNEL_SLUG = f"{USER_NAME}/cyberxai-url-module-b-training"
 KERNEL_ID = 135009902 if USER_NAME == "siddudavant" else None
-DATASET_SOURCE = "siddudavant/cyberxai-combined-urls"
+DATASET_SOURCE = f"{USER_NAME}/cyberxai-combined-urls"
 SCRIPT_PATH = ROOT / "src" / "kaggle_kernel_train_url.py"
 
 

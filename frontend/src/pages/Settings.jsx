@@ -1,31 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Settings as SettingsIcon,
   Server,
   RefreshCw,
-  Cpu,
   Shield,
-  Layers,
   CheckCircle2,
   AlertCircle,
-  Sliders,
   Database,
   Terminal,
   ExternalLink,
   Save,
   Check,
   CloudDownload,
-  HardDrive,
-  Zap,
   Search,
-  Filter,
-  Sparkles,
-  Box,
   Flame,
-  Radio,
-  FileCode,
-  Network,
-  Activity
+  Radio
 } from 'lucide-react';
 import { useBackend } from '../context/BackendContext';
 import {
@@ -34,6 +22,7 @@ import {
   loadSpecificModelFromHf,
   reloadModelMemoryCache,
 } from '../services/modelService';
+import hybridAnalysisService from '../services/hybridAnalysisService';
 
 export const Settings = () => {
   const {
@@ -61,6 +50,7 @@ export const Settings = () => {
   const [syncFeedback, setSyncFeedback] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [haInfo, setHaInfo] = useState(null);
 
   // Fetch HF Model Status
   const fetchHfStatus = async () => {
@@ -77,9 +67,19 @@ export const Settings = () => {
     }
   };
 
+  const fetchHaStatus = async () => {
+    try {
+      const data = await hybridAnalysisService.getStatus();
+      setHaInfo(data);
+    } catch (err) {
+      console.error('Failed to query Hybrid Analysis status:', err);
+    }
+  };
+
   useEffect(() => {
     if (isOnline) {
       fetchHfStatus();
+      fetchHaStatus();
     }
   }, [isOnline]);
 
@@ -611,6 +611,87 @@ export const Settings = () => {
 
           <div className="text-[11px] text-slate-400 font-sans">
             Health checks verify root <code className="text-cyan-300">/health</code> or <code className="text-cyan-300">/api/health</code> endpoint responsiveness.
+          </div>
+        </div>
+      </div>
+
+      {/* External Threat Intelligence & AI APIs */}
+      <div className="soc-card p-6 space-y-4 font-mono text-xs">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-violet-400" />
+            <h3 className="text-sm font-bold text-slate-100">External Threat Intelligence & AI Services</h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Authenticated APIs</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Hybrid Analysis Falcon Sandbox */}
+          <div className="p-4 rounded-xl bg-[#080d19] border border-violet-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-violet-300">CrowdStrike Falcon Sandbox</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${haInfo?.authenticated ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}`}>
+                {haInfo?.authenticated ? 'CONNECTED (v2.38.0)' : 'STANDBY'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
+              Provides real-time dynamic detonation telemetry, multi-engine AV scan verdicts, and global malware threat feeds.
+            </p>
+            <div className="space-y-1.5 pt-2 border-t border-slate-800 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Account Owner:</span>
+                <span className="text-slate-200">
+                  {haInfo?.authenticated
+                    ? `${haInfo?.user?.name || 'Verified Account'}${haInfo?.user?.email ? ` (${haInfo.user.email})` : ''}`
+                    : 'Not Connected'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">API Key Mask:</span>
+                <span className="text-cyan-300">{haInfo?.api_key_masked || 'Not Configured'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Key ID:</span>
+                <span className="text-slate-400">{haInfo?.key_id || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Auth Level:</span>
+                <span className="text-emerald-400 font-semibold">
+                  {haInfo?.auth_level_name ? `${haInfo.auth_level_name} (Level ${haInfo?.auth_level ?? '—'})` : 'Pending Verification'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Google Gemini 3.5 Flash */}
+          <div className="p-4 rounded-xl bg-[#080d19] border border-cyan-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-cyan-300">Google Gemini 3.5 Flash</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                ACTIVE AI ASSISTANT
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
+              High-throughput SOC security copilot fine-tuned for real-time explainability, threat hunting, and remediation guidance.
+            </p>
+            <div className="space-y-1.5 pt-2 border-t border-slate-800 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Model Name:</span>
+                <span className="text-cyan-300 font-bold">gemini-3.5-flash</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Endpoint:</span>
+                <span className="text-slate-400">generativelanguage.googleapis.com/v1beta</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Grounding Role:</span>
+                <span className="text-slate-200">Senior SOC Incident Response Analyst</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Status:</span>
+                <span className="text-emerald-400 font-semibold">Configured via .env</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

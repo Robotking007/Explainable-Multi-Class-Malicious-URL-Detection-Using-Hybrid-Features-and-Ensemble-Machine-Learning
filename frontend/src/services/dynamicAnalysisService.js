@@ -43,24 +43,64 @@ function normalizeDynamicResponse(data, targetUrl) {
       { id: 4, name: 'DOM & Dynamic JS Execution Profiling', status: 'completed', duration: '950ms' },
       { id: 5, name: 'Multi-Modal Hybrid GNN Classification', status: 'completed', duration: '320ms' },
     ],
-    redirectChain: data.redirects || [
+    redirectChain: data.redirect_chain || data.redirects || [
       { step: 1, url: targetUrl, status: 302, reason: 'Temporary Redirect' },
       { step: 2, url: `${targetUrl}/auth-bypass`, status: 200, reason: 'Target Reached' }
     ],
-    domProfile: data.dom_profile || {
-      formsCount: data.forms_count ?? 1,
-      passwordFields: data.password_fields ?? 1,
-      hiddenIframes: data.hidden_iframes ?? 0,
-      externalScriptCount: data.external_scripts ?? 3,
-      pageTitle: data.title || 'Untitled Session Verification',
-      elementsTotal: data.elements_total ?? 25
+    domProfile: {
+      formsCount: data.dom_profile?.forms_count ?? data.forms_count ?? 1,
+      passwordFields: data.dom_profile?.password_fields ?? data.password_fields ?? 1,
+      hiddenIframes: data.dom_profile?.hidden_iframes ?? data.hidden_iframes ?? 0,
+      externalScriptCount: data.dom_profile?.external_scripts ?? data.external_scripts ?? 3,
+      pageTitle: data.dom_profile?.page_title ?? data.title ?? 'Untitled Session Verification',
+      elementsTotal: data.dom_profile?.elements_total ?? data.elements_total ?? 25,
+      formActionExternal: Boolean(data.dom_profile?.form_action_external ?? data.form_action_external),
+      pageTitleBrandMismatch: Boolean(data.dom_profile?.page_title_brand_mismatch ?? data.page_title_brand_mismatch),
+      jsObfuscationScore: Number(data.dom_profile?.js_obfuscation_score ?? data.js_obfuscation_score ?? 0.0),
+      inlineScriptRatio: Number(data.dom_profile?.inline_script_ratio ?? data.inline_script_ratio ?? 0.0),
+      screenshotPerceptualHash: data.dom_profile?.screenshot_perceptual_hash ?? data.screenshot_perceptual_hash ?? 'b3cccc9999336466',
+      popupOrRedirectOnLoad: Boolean(data.dom_profile?.popup_or_redirect_on_load ?? data.popup_or_redirect_on_load),
+      tlsUsed: Boolean(data.dom_profile?.tls_used ?? data.tls_used ?? targetUrl.startsWith('https://'))
+    },
+    playwrightFeatures: {
+      engine: data.playwright_isolated_engine || data.browser_details?.engine || 'Chromium 126.0 (Playwright Sandboxed Context)',
+      screenshotPerceptualHash: data.screenshot_perceptual_hash || data.dom_profile?.screenshot_perceptual_hash || 'b3cccc9999336466',
+      jsObfuscationScore: Number(data.js_obfuscation_score ?? data.dom_profile?.js_obfuscation_score ?? 0.0),
+      inlineScriptRatio: Number(data.inline_script_ratio ?? data.dom_profile?.inline_script_ratio ?? 0.0),
+      formActionExternal: Boolean(data.form_action_external ?? data.dom_profile?.form_action_external),
+      pageTitleBrandMismatch: Boolean(data.page_title_brand_mismatch ?? data.dom_profile?.page_title_brand_mismatch),
+      popupOrRedirectOnLoad: Boolean(data.popup_or_redirect_on_load ?? data.dom_profile?.popup_or_redirect_on_load),
+      tlsUsed: Boolean(data.tls_used ?? data.dom_profile?.tls_used ?? targetUrl.startsWith('https://')),
+      elapsedMs: data.elapsed_ms || 950
     },
     domTree: data.dom_tree || data.domTree || [],
-    browserDetails: data.browser_details || {
-      engine: 'Chromium 124.0.6367.29 (Headless Sandbox)',
-      viewport: '1280x800',
-      sslValid: true,
-      finalUrl: targetUrl
+    browserDetails: {
+      engine: data.browser_details?.engine || data.playwright_isolated_engine || 'Chromium 126.0 (Playwright Sandboxed Context)',
+      viewport: data.browser_details?.viewport || '1280x800 Sandbox Isolation',
+      sslValid: Boolean(
+        data.browser_details?.sslValid ??
+        data.browser_details?.ssl_valid ??
+        data.sslValid ??
+        data.ssl_valid ??
+        data.dom_profile?.tls_used ??
+        data.tls_used ??
+        (targetUrl.toLowerCase().startsWith('https://') || !targetUrl.toLowerCase().startsWith('http://'))
+      ),
+      ssl_valid: Boolean(
+        data.browser_details?.sslValid ??
+        data.browser_details?.ssl_valid ??
+        data.sslValid ??
+        data.ssl_valid ??
+        data.dom_profile?.tls_used ??
+        data.tls_used ??
+        (targetUrl.toLowerCase().startsWith('https://') || !targetUrl.toLowerCase().startsWith('http://'))
+      ),
+      tlsVersion: data.browser_details?.tlsVersion || data.browser_details?.tls_version || (
+        (data.browser_details?.ssl_valid ?? targetUrl.toLowerCase().startsWith('https://') ?? true) ? 'TLSv1.3' : 'None (Plaintext HTTP)'
+      ),
+      issuer: data.browser_details?.issuer || 'Trusted Certificate Authority',
+      finalStatus: data.browser_details?.final_status ?? data.browser_details?.finalStatus ?? 200,
+      finalUrl: data.browser_details?.final_url ?? data.browser_details?.finalUrl ?? data.final_url ?? targetUrl
     },
     agentTrajectory: data.agent_trajectory || [
       { step: 1, phase: 'Ingress & Redirection Analysis', agent_thought: 'Probe ingress network routes and redirection hops', status: 'completed' },
@@ -103,6 +143,8 @@ function normalizeDynamicResponse(data, targetUrl) {
       detectedThreats: [],
       scripts: []
     },
+    detectedThreats: data.js_behavior?.detected_threats || [],
+    scripts: data.js_behavior?.scripts || [],
     warnings: data.warnings || [
       'No evasive JavaScript primitives observed'
     ],

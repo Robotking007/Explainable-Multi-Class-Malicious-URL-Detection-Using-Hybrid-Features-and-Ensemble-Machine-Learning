@@ -1,27 +1,24 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Globe,
   Search,
   Server,
-  Layers,
-  ShieldAlert,
   Copy,
   Check,
-  ExternalLink,
   Calendar,
   MapPin,
-  Cpu,
   ChevronDown,
   ChevronUp,
-  Info
+  Zap
 } from 'lucide-react';
 import intelligenceService from '../services/intelligenceService';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ErrorBanner from '../components/common/ErrorBanner';
-import StatusBadge from '../components/common/StatusBadge';
 import { copyToClipboard } from '../utils/helpers';
 
 export const URLIntelligence = () => {
+  const navigate = useNavigate();
   const [targetUrl, setTargetUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -170,7 +167,7 @@ export const URLIntelligence = () => {
                 <span className="text-xs text-slate-400 font-mono">Domain Age: {intelData.domainAge}</span>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono">
                   <span className="text-slate-400 block text-[10px]">Resolved IP</span>
                   <span className="text-cyan-300 font-bold">{intelData.network?.ip}</span>
@@ -179,6 +176,13 @@ export const URLIntelligence = () => {
                   <span className="text-slate-400 block text-[10px]">ASN Registry</span>
                   <span className="text-violet-300 font-bold">{intelData.network?.asn}</span>
                 </div>
+                <button
+                  onClick={() => navigate(`/dynamic-analysis?url=${encodeURIComponent(intelData.domain.startsWith('http') ? intelData.domain : `https://${intelData.domain}`)}`)}
+                  className="soc-btn-primary text-xs px-3.5 py-2 flex items-center gap-1.5"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Dynamic Sandbox</span>
+                </button>
               </div>
             </div>
           </div>

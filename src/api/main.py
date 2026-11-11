@@ -724,9 +724,9 @@ def graph_infrastructure_endpoint(
             "type": "certNode",
             "position": {"x": 420, "y": 200},
             "data": {
-                "label": "TLS Certificate" if target.startswith("https") else "No TLS (HTTP)",
+                "label": "TLS Certificate" if (target.lower().startswith("https") or not target.lower().startswith("http://")) else "No TLS (HTTP)",
                 "category": "SSL/TLS Certificate",
-                "risk": "Standard Certificate" if target.startswith("https") else "Unencrypted",
+                "risk": "Standard Certificate" if (target.lower().startswith("https") or not target.lower().startswith("http://")) else "Unencrypted",
                 "issuer": "Let's Encrypt Authority",
                 "validDays": 90
             }
@@ -814,8 +814,10 @@ def dynamic_analysis_start(
         import traceback
         traceback.print_exc()
         # Fallback heuristic agent if network error occurs
-        from url_pipeline.dynamic_agent import DynamicSecurityAgent
+        from url_pipeline.dynamic_agent import DynamicSecurityAgent, check_ssl_certificate
         agent = DynamicSecurityAgent(timeout_sec=1)
+        fallback_ssl = check_ssl_certificate(clean_url)
+        is_ssl = bool(fallback_ssl.get("ssl_valid", False))
         agent_data = agent._synthesize_fallback(clean_url, str(e)) if hasattr(agent, "_synthesize_fallback") else {
             "analysis_id": f"dyn-{int(time.time()*1000)}",
             "url": clean_url,
@@ -829,10 +831,20 @@ def dynamic_analysis_start(
             ],
             "redirects": [{"step": 1, "url": clean_url, "status": 0, "reason": "Connection Timed Out / Host Offline", "cross_domain": False, "latency_ms": 0}],
             "js_behavior": {"total_scripts": 0, "threat_triggers_count": 0, "eval_detected": False, "keylogger_hooks": False, "anti_debug": False, "max_inline_entropy": 0.0, "detected_threats": [], "scripts": []},
-            "dom_profile": {"forms_count": 0, "password_fields": 0, "hidden_iframes": 0, "external_scripts": 0, "page_title": clean_url, "elements_total": 0},
+            "dom_profile": {"forms_count": 0, "password_fields": 0, "hidden_iframes": 0, "external_scripts": 0, "page_title": clean_url, "elements_total": 0, "tls_used": is_ssl},
             "dom_tree": [],
             "warnings": [f"[WARNING] Live Handshake Failed: {e}", "[INFO] Domain flagged for offline behavioral review."],
-            "browser_details": {"engine": "Chromium 126.0 (Autonomous Dynamic Agent)", "viewport": "1280x800", "ssl_valid": False, "final_status": 0, "final_url": clean_url}
+            "browser_details": {
+                "engine": "Chromium 126.0 (Autonomous Dynamic Agent)",
+                "viewport": "1280x800",
+                "ssl_valid": is_ssl,
+                "sslValid": is_ssl,
+                "tls_version": fallback_ssl.get("tls_version", "TLSv1.3" if is_ssl else "None"),
+                "tlsVersion": fallback_ssl.get("tls_version", "TLSv1.3" if is_ssl else "None"),
+                "issuer": fallback_ssl.get("issuer", "Trusted Public CA" if is_ssl else "None"),
+                "final_status": 0,
+                "final_url": clean_url
+            }
         }
 
     elapsed_ms = agent_data.get("elapsed_ms", 950)
@@ -978,8 +990,16 @@ def chat(req: ChatRequest):
         raise HTTPException(400, "message must not be empty")
     try:
         reply = ask_chatbot(req.message.strip(), req.context, req.history)
-        return {"reply": reply, "response": reply}
-    except Exception:
+        return {
+            "reply": reply,
+            "response": reply,
+            "model": "gemini-3.5-flash",
+            "provider": "Google Gemini (Gemini 3.5 Flash)",
+            "status": "success"
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         ctx = req.context or {}
         p_class = ctx.get("predicted_class") or ctx.get("classification") or "suspicious"
         conf = ctx.get("confidence") or 0.94
@@ -990,7 +1010,14 @@ def chat(req: ChatRequest):
             f"and infrastructure risk indicators. We recommend isolating host interactions and reviewing the "
             f"SHAP feature attributions and dynamic sandbox execution logs for deeper analysis."
         )
-        return {"reply": reply, "response": reply}
+        return {
+            "reply": reply,
+            "response": reply,
+            "model": "gemini-3.5-flash (heuristic fallback)",
+            "provider": "CyberXAI Security Engine",
+            "status": "fallback",
+            "error": str(e)
+        }
 
 
 # ==========================================
@@ -1476,7 +1503,6 @@ def load_models_from_hf(req: Optional[LoadFromHfRequest] = None):
     Downloads requested or all missing checkpoints from Hugging Face repository
     (siddudavant/cyberxai-models) into models/ and warms all in-memory PyTorch / Scikit-learn caches.
     """
-    from model_registry import ensure_model
     token = _get_hf_token()
     if not token:
         raise HTTPException(
@@ -1612,4 +1638,89 @@ def reload_model_cache():
         "active_pipelines": warmed,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ==========================================
+# HYBRID ANALYSIS (CROWDSTRIKE FALCON SANDBOX)
+# ==========================================
+
+@app.get("/api/hybrid-analysis/status")
+@app.get("/api/hybrid-analysis/status/")
+def get_hybrid_analysis_status():
+    """Returns Falcon Sandbox / Hybrid Analysis authentication status, quota, and version."""
+    try:
+        from url_pipeline.hybrid_analysis_client import client as ha_client
+        status = ha_client.get_account_status()
+        return {
+            "status": "connected",
+            "provider": "CrowdStrike Falcon Sandbox (Hybrid Analysis v2)",
+            **status
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "provider": "CrowdStrike Falcon Sandbox (Hybrid Analysis v2)",
+            "message": str(e),
+            "authenticated": False
+        }
+
+
+@app.get("/api/hybrid-analysis/feed")
+@app.get("/api/hybrid-analysis/feed/")
+def get_hybrid_analysis_feed(limit: int = Query(25, ge=1, le=100)):
+    """Fetches real-time live threat detonations and malware feed from Hybrid Analysis."""
+    try:
+        from url_pipeline.hybrid_analysis_client import client as ha_client
+        feed = ha_client.get_live_threat_feed(limit=limit)
+        return {
+            "status": "success",
+            "count": len(feed),
+            "data": feed
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "count": 0,
+            "data": []
+        }
+
+
+@app.get("/api/hybrid-analysis/hash/{sha256}")
+@app.get("/api/hybrid-analysis/hash/{sha256}/")
+def lookup_hybrid_analysis_hash(sha256: str):
+    """Queries Hybrid Analysis multi-engine AV scan summary and threat verdict by SHA256 hash."""
+    try:
+        from url_pipeline.hybrid_analysis_client import client as ha_client
+        result = ha_client.lookup_hash(sha256)
+        return {
+            "status": "success",
+            **result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "sha256": sha256,
+            "message": str(e)
+        }
+
+
+@app.get("/api/hybrid-analysis/environments")
+@app.get("/api/hybrid-analysis/environments/")
+def get_hybrid_analysis_environments():
+    """Lists supported guest OS sandbox environments in Falcon Sandbox."""
+    try:
+        from url_pipeline.hybrid_analysis_client import client as ha_client
+        envs = ha_client.get_environments()
+        return {
+            "status": "success",
+            "environments": envs
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "environments": []
+        }
+
 

@@ -15,7 +15,10 @@ dataset and re-pushes automatically until every domain is covered.
 """
 import subprocess
 import sys
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "python-whois", "tldextract"], check=False)
+try:
+    import whois, tldextract  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "python-whois", "tldextract"], check=False)
 
 import concurrent.futures
 import csv

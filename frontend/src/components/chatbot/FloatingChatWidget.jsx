@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  MessageSquare,
   X,
   Send,
   Bot,
@@ -23,8 +22,9 @@ export const FloatingChatWidget = () => {
       id: 'welcome',
       role: 'assistant',
       content:
-        'Hello Analyst! I am the CyberX AI Security Assistant. Ask me anything about GNN URL classification, malware families (CIC-MalMem-2022, BODMAS, MalAPI2019), or Explainable AI feature attributions.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        'Hello Analyst! I am the CyberX AI Security Assistant powered by Google Gemini 3.5 Flash. Ask me anything about GNN URL classification, malware families (CIC-MalMem-2022, BODMAS, MalAPI2019), or Explainable AI feature attributions.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      model: 'gemini-3.5-flash'
     }
   ]);
   const [input, setInput] = useState('');
@@ -72,6 +72,7 @@ export const FloatingChatWidget = () => {
         id: `b-${Date.now()}`,
         role: 'assistant',
         content: res.content,
+        model: res.model || 'gemini-3.5-flash',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages((prev) => [...prev, botMsg]);
@@ -88,7 +89,8 @@ export const FloatingChatWidget = () => {
         id: 'welcome-reset',
         role: 'assistant',
         content: 'Conversation cleared. How can I assist with your threat intelligence analysis?',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        model: 'gemini-3.5-flash'
       }
     ]);
     setError(null);
@@ -132,7 +134,10 @@ export const FloatingChatWidget = () => {
                   <span>AI Security Assistant</span>
                   <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-rose-500'}`} />
                 </h4>
-                <p className="text-[10px] text-slate-400">GNN & XAI Decision Support</p>
+                <p className="text-[10px] text-cyan-400/90 font-mono flex items-center gap-1">
+                  <Sparkles className="w-2.5 h-2.5" />
+                  <span>Google Gemini 3.5 Flash</span>
+                </p>
               </div>
             </div>
 

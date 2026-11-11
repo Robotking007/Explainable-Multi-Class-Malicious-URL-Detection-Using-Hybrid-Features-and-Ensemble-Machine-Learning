@@ -13,6 +13,8 @@ and multi-URL cluster graphs (for inductive batch training).
 """
 from __future__ import annotations
 
+from collections import Counter
+import math
 import re
 import socket
 import sys
@@ -27,9 +29,93 @@ if str(ROOT) not in sys.path:
 import numpy as np
 import torch
 
-from src.url_pipeline.features import extract_features_row, normalize_url
+from src.url_pipeline.features import (
+    BRAND_KEYWORDS,
+    IP_RE,
+    PHISH_KEYWORDS,
+    extract_features_row,
+    normalize_url,
+)
 from src.url_pipeline.asn_features import get_asn_features_for_url
 from src.url_pipeline.whois_features import get_whois_features_for_url
+
+GNN_SUSPICIOUS_TLDS = {
+    "zip", "review", "country", "kim", "cricket", "science", "work",
+    "party", "gq", "link", "xyz", "top", "click", "tk", "ml", "ga", "cf",
+}
+
+
+def _gnn_entropy(s: str) -> float:
+    if not s:
+        return 0.0
+    n = len(s)
+    counts = Counter(s)
+    return float(-sum((c / n) * math.log2(c / n) for c in counts.values()))
+
+
+def extract_gnn_url_features(url: str) -> List[float]:
+    """45-dim URL feature vector matching the Kaggle URLInfraGNN checkpoint schema."""
+    url_str = normalize_url(url)
+    parsed = urlparse(url_str if "//" in url_str else "http://" + url_str)
+    netloc = parsed.netloc or ""
+    path = parsed.path or ""
+    query = parsed.query or ""
+
+    parts = netloc.split(".")
+    tld = parts[-1].lower() if len(parts) > 1 else ""
+    domain = parts[-2].lower() if len(parts) > 1 else netloc.lower()
+    subdomain_count = max(0, len(parts) - 2)
+    u_len = max(len(url_str), 1)
+    lower = url_str.lower()
+
+    feats = {
+        "url_length": len(url_str),
+        "hostname_length": len(netloc),
+        "path_length": len(path),
+        "digit_ratio": sum(c.isdigit() for c in url_str) / u_len,
+        "uppercase_ratio": sum(c.isupper() for c in url_str) / u_len,
+        "ip_in_url_flag": int(bool(IP_RE.match(netloc))),
+        "count_at": url_str.count("@"),
+        "count_qmark": url_str.count("?"),
+        "count_hyphen": url_str.count("-"),
+        "count_eq": url_str.count("="),
+        "count_dot": url_str.count("."),
+        "count_slash": url_str.count("/"),
+        "count_pct": url_str.count("%"),
+        "count_amp": url_str.count("&"),
+        "count_colon": url_str.count(":"),
+        "subdomain_count": subdomain_count,
+        "domain_length": len(domain),
+        "tld_length": len(tld),
+        "suspicious_tld_flag": int(tld in GNN_SUSPICIOUS_TLDS),
+        "hyphen_in_domain_flag": int("-" in domain),
+        "digit_in_domain_flag": int(any(c.isdigit() for c in domain)),
+        "domain_entropy": _gnn_entropy(domain),
+        "subdomain_length": len(".".join(parts[:-2])) if len(parts) > 2 else 0,
+        "domain_token_count": len(re.split(r"[.\-_]", netloc)),
+        "brand_in_domain_flag": int(any(b in domain for b in BRAND_KEYWORDS)),
+        "brand_in_subdomain_flag": int(any(b in ".".join(parts[:-2]) for b in BRAND_KEYWORDS)) if len(parts) > 2 else 0,
+        "phish_keyword_count": sum(k in lower for k in PHISH_KEYWORDS),
+        "brand_keyword_count": sum(b in lower for b in BRAND_KEYWORDS),
+        "action_keyword_count": sum(k in lower for k in ["download", "install", "click", "free", "gift", "bonus", "win"]),
+        "sensitive_keyword_count": sum(k in lower for k in ["ssn", "creditcard", "cvv", "otp", "pin", "wallet"]),
+        "path_depth": path.count("/"),
+        "param_count": len(query.split("&")) if query else 0,
+        "has_query_flag": int(bool(query)),
+        "has_fragment_flag": int(bool(parsed.fragment)),
+        "has_port_flag": int(bool(parsed.port)),
+        "double_slash_in_path": int("//" in path),
+        "semicolon_in_url": int(";" in url_str),
+        "url_entropy": _gnn_entropy(url_str),
+        "path_entropy": _gnn_entropy(path),
+        "special_char_ratio": sum(url_str.count(c) for c in ["@", "?", "-", "=", ".", "/", "%", "&", ":"]) / u_len,
+        "alpha_ratio": sum(c.isalpha() for c in url_str) / u_len,
+        "hex_char_ratio": sum(c in "0123456789abcdefABCDEF" for c in url_str) / u_len,
+        "longest_token_length": max((len(t) for t in re.split(r"[.\-_/?=&#]", url_str) if t), default=0),
+        "consecutive_consonant_ratio": 1.0 if re.search(r"[bcdfghjklmnpqrstvwxyz]{4,}", lower) else 0.0,
+        "token_variance": 0.0,
+    }
+    return [float(v) for v in feats.values()]
 
 # Known high-abuse ASNs frequently observed hosting disposable phishing kits
 SUSPICIOUS_ASNS = {
@@ -176,9 +262,16 @@ def build_url_star_graph(
       adj: (4, 4) Adjacency matrix tensor
       meta: Metadata regarding graph node identities
     """
-    # 1. URL Features (45-dim)
-    url_dict = extract_features_row(url)
-    url_vec = np.array(list(url_dict.values()), dtype=np.float32)
+    # 1. URL Features (45-dim Kaggle GNN schema or full hybrid schema)
+    expected_dim = getattr(scaler, "n_features_in_", None) if scaler is not None else None
+    if expected_dim == 45:
+        url_vec = np.array(extract_gnn_url_features(url), dtype=np.float32)
+    else:
+        url_dict = extract_features_row(url)
+        vals = list(url_dict.values())
+        if expected_dim is not None and len(vals) > expected_dim:
+            vals = vals[:expected_dim]
+        url_vec = np.array(vals, dtype=np.float32)
     if scaler is not None:
         url_vec = scaler.transform(url_vec.reshape(1, -1)).squeeze(0)
 

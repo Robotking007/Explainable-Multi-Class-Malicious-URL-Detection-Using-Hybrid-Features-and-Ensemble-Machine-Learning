@@ -58,11 +58,12 @@ def fetch_threatfox(auth_key: str) -> Path:
 
 def refresh_urlhaus(auth_key: str) -> Path:
     log("Refreshing URLhaus bulk CSV dump...")
-    resp = requests.get(
-        "https://urlhaus.abuse.ch/downloads/csv/",
-        headers={"Auth-Key": auth_key},
-        timeout=120,
-    )
+    # URLhaus v2 API endpoint using authenticated exports
+    url = f"https://urlhaus-api.abuse.ch/v2/files/exports/{auth_key}/full.csv.zip"
+    resp = requests.get(url, timeout=120)
+    if resp.status_code == 404 or resp.status_code == 410:
+        url = f"https://urlhaus-api.abuse.ch/v2/files/exports/{auth_key}/recent.csv"
+        resp = requests.get(url, timeout=120)
     resp.raise_for_status()
     out_path = DATASET_DIR / "file.csv.txt"
     old_size = out_path.stat().st_size if out_path.exists() else 0

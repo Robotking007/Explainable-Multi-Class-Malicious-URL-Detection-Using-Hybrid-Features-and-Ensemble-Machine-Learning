@@ -29,7 +29,17 @@ def main():
     from kagglehub.clients import build_kaggle_client
     from kagglesdk.kernels.types.kernels_api_service import ApiSaveKernelRequest
 
+    hf_token = ""
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("HF_TOKEN="):
+                hf_token = line.split("=", 1)[1].strip()
+
     code = SCRIPT_PATH.read_text(encoding="utf-8")
+    if hf_token:
+        code = code.replace('HF_TOKEN = ""', f'HF_TOKEN = "{hf_token}"')
+        print(f"Injected HF_TOKEN into GNN kernel for direct Hugging Face model publishing.")
 
     req = ApiSaveKernelRequest()
     req.slug = KERNEL_SLUG
@@ -38,7 +48,7 @@ def main():
     req.language = "python"
     req.kernel_type = "script"
     req.is_private = True
-    req.enable_gpu = False
+    req.enable_gpu = True
     req.enable_internet = True
     req.dataset_data_sources = [DATASET_SOURCE]
     req.competition_data_sources = []

@@ -16,7 +16,10 @@ Dataset expected at /kaggle/input/cyberxai-combined-urls/combined_urls.csv
 """
 import subprocess
 import sys
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "imbalanced-learn", "tldextract"], check=False)
+try:
+    import imblearn, tldextract  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "imbalanced-learn", "tldextract"], check=False)
 
 import gc
 import json

@@ -4,12 +4,8 @@ import {
   Shield,
   Globe,
   Binary,
-  Search,
   UploadCloud,
   FileCode,
-  AlertTriangle,
-  CheckCircle2,
-  XCircle,
   StopCircle,
   Sparkles,
   ExternalLink,
@@ -19,7 +15,8 @@ import {
   Cpu,
   Layers,
   ArrowRight,
-  Info
+  Info,
+  Zap
 } from 'lucide-react';
 import threatService from '../services/threatService';
 import malwareService, { MALWARE_MODULES } from '../services/malwareService';
@@ -477,8 +474,43 @@ export const ThreatAnalyzer = () => {
                         <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
                         <span>View Infrastructure Graph</span>
                       </button>
+                      <button
+                        onClick={() => navigate(`/dynamic-analysis?url=${encodeURIComponent(urlResult.url)}`)}
+                        className="soc-btn-secondary text-xs px-3.5 py-2 flex items-center gap-1.5 border-cyan-500/40 text-cyan-300 hover:bg-cyan-950/50"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Dynamic Sandbox (Playwright DOM)</span>
+                      </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Module C Dynamic Sandbox Escalation Card (Table 6.2) */}
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-cyan-950/30 via-slate-900/60 to-purple-950/20 border border-cyan-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                      <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                        Module C Escalation: Playwright Headless Browser Sandbox
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
+                        Table 6.2 Dynamic DOM Telemetry
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-sans max-w-2xl leading-relaxed">
+                      Detonate this endpoint in an isolated Chromium container to observe live JavaScript runtime obfuscation,
+                      visual perceptual hash (pHash), external credential exfiltration hooks, and brand mismatch evasion.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => navigate(`/dynamic-analysis?url=${encodeURIComponent(urlResult.url)}`)}
+                    className="soc-btn-primary text-xs px-4 py-2.5 flex items-center justify-center gap-2 flex-shrink-0"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Detonate in Dynamic Sandbox</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             </div>

@@ -34,6 +34,8 @@ import torch.nn.functional as F
 
 IN_DIR = Path("/kaggle/input")
 OUT_DIR = Path("/kaggle/working")
+HF_TOKEN = ""
+HF_REPO_ID = "siddudavant/cyberxai-models"
 
 
 def log(msg: str) -> None:
@@ -187,15 +189,28 @@ class GraphAttentionLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, h: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        Wh = self.W(h)
-        N = Wh.size(0)
-        Wh_i = Wh.unsqueeze(1).repeat(1, N, 1)
-        Wh_j = Wh.unsqueeze(0).repeat(N, 1, 1)
-        pair = torch.cat([Wh_i, Wh_j], dim=-1)
-        e = self.leaky_relu(torch.matmul(pair, self.a).squeeze(-1))
-        e = e.masked_fill(adj == 0, -1e9)
-        attn = self.dropout(F.softmax(e, dim=-1))
-        return torch.matmul(attn, Wh)
+        if h.dim() == 3:
+            Wh = self.W(h)
+            B, N, C = Wh.shape
+            Wh_i = Wh.unsqueeze(2).expand(B, N, N, C)
+            Wh_j = Wh.unsqueeze(1).expand(B, N, N, C)
+            pair = torch.cat([Wh_i, Wh_j], dim=-1)
+            e = self.leaky_relu(torch.matmul(pair, self.a).squeeze(-1))
+            if adj.dim() == 2:
+                adj = adj.unsqueeze(0)
+            e = e.masked_fill(adj == 0, -1e9)
+            attn = self.dropout(F.softmax(e, dim=-1))
+            return torch.matmul(attn, Wh)
+        else:
+            Wh = self.W(h)
+            N = Wh.size(0)
+            Wh_i = Wh.unsqueeze(1).repeat(1, N, 1)
+            Wh_j = Wh.unsqueeze(0).repeat(N, 1, 1)
+            pair = torch.cat([Wh_i, Wh_j], dim=-1)
+            e = self.leaky_relu(torch.matmul(pair, self.a).squeeze(-1))
+            e = e.masked_fill(adj == 0, -1e9)
+            attn = self.dropout(F.softmax(e, dim=-1))
+            return torch.matmul(attn, Wh)
 
 
 class URLInfraGNN(nn.Module):
@@ -219,16 +234,29 @@ class URLInfraGNN(nn.Module):
         )
 
     def encode_nodes(self, u: torch.Tensor, d: torch.Tensor, i: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+        if u.dim() == 2:
+            u_e = self.url_proj(u).unsqueeze(1)
+            d_e = self.domain_proj(d).unsqueeze(1)
+            i_e = self.ip_proj(i).unsqueeze(1)
+            a_e = self.asn_proj(a).unsqueeze(1)
+            return torch.cat([u_e, d_e, i_e, a_e], dim=1)
         return torch.cat([self.url_proj(u), self.domain_proj(d), self.ip_proj(i), self.asn_proj(a)], dim=0)
 
     def forward(self, nodes: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        h1 = self.norm1(nodes + F.elu(self.gat1(nodes, adj)))
-        h2 = self.norm2(h1 + F.elu(self.gat2(h1, adj)))
-        return self.classifier(h2[0:1])
+        if nodes.dim() == 3:
+            h1 = self.norm1(nodes + F.elu(self.gat1(nodes, adj)))
+            h2 = self.norm2(h1 + F.elu(self.gat2(h1, adj)))
+            return self.classifier(h2[:, 0, :])
+        else:
+            h1 = self.norm1(nodes + F.elu(self.gat1(nodes, adj)))
+            h2 = self.norm2(h1 + F.elu(self.gat2(h1, adj)))
+            return self.classifier(h2[0:1])
 
 
 def find_data_file() -> Path:
     for p in IN_DIR.rglob("combined_urls.csv"):
+        return p
+    for p in IN_DIR.rglob("merged_clean_urls.csv"):
         return p
     for p in IN_DIR.rglob("*.parquet"):
         return p
@@ -239,21 +267,28 @@ def find_data_file() -> Path:
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log(f"Starting Kaggle URLInfraGNN Pipeline on device: {device}")
+    log(f"Starting Kaggle URLInfraGNN Full-Dataset Pipeline on device: {device}")
 
     data_file = find_data_file()
     log(f"Found input data: {data_file}")
-    df = pd.read_csv(data_file, nrows=30000)
+    # Load 100% of rows from full dataset without downsampling
+    df = pd.read_csv(data_file)
 
     col_map = {c.lower(): c for c in df.columns}
     url_col = col_map.get("url", "url")
     label_col = col_map.get("label", col_map.get("class", col_map.get("type", "label")))
     df = df.dropna(subset=[url_col, label_col]).reset_index(drop=True)
-    log(f"Loaded {len(df):,} sample rows for infrastructure graph training.")
+    df = df[df[url_col].astype(str).str.len() > 3]
+    log(f"Loaded {len(df):,} total rows for full infrastructure graph training.")
 
-    urls = df[url_col].tolist()
-    n_workers = min(os.cpu_count() or 4, 4)
-    chunk_size = 5000
+    urls = df[url_col].astype(str).tolist()
+    labels = df[label_col].astype(str).tolist()
+    del df
+    gc.collect()
+
+    log("Extracting 45 hybrid static features in parallel chunks across full dataset...")
+    n_workers = min(os.cpu_count() or 4, 8)
+    chunk_size = 10000
     sub_chunks = [urls[i:i + chunk_size] for i in range(0, len(urls), chunk_size)]
 
     dfs = []
@@ -262,17 +297,24 @@ def main():
             dfs.append(pd.DataFrame(chunk_res, dtype=np.float32))
 
     X_raw = pd.concat(dfs, ignore_index=True)
+    del dfs
+    gc.collect()
+
     le = LabelEncoder()
-    y_raw = le.fit_transform(df[label_col].astype(str))
+    y_raw = le.fit_transform(labels)
     label_mapping = {int(idx): str(c) for idx, c in enumerate(le.classes_)}
     num_classes = len(label_mapping)
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_raw.fillna(0.0).values)
+    del X_raw
+    gc.collect()
 
     X_tr, X_te, y_tr, y_te, u_tr, u_te = train_test_split(
-        X_scaled, y_raw, urls, test_size=0.2, random_state=42, stratify=y_raw
+        X_scaled, y_raw, urls, test_size=0.15, random_state=42, stratify=y_raw
     )
+    del X_scaled, y_raw, urls, labels
+    gc.collect()
 
     # Base Adjacency (4, 4)
     base_adj = torch.zeros((4, 4), dtype=torch.float32)
@@ -296,10 +338,10 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss()
     epochs = 8
+    batch_size = 1024
 
-    log(f"Training URLInfraGNN ({sum(p.numel() for p in model.parameters()):,} params) for {epochs} epochs...")
+    log(f"Training URLInfraGNN ({sum(p.numel() for p in model.parameters()):,} params) on full dataset ({len(y_tr):,} train rows) for {epochs} epochs...")
     n_train = len(y_tr)
-    batch_size = 256
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -317,27 +359,26 @@ def main():
             y_b = torch.tensor(y_tr[b_idx.numpy()], dtype=torch.long).to(device)
 
             optimizer.zero_grad()
-            batch_logits = []
-            for b in range(B):
-                nodes = model.encode_nodes(u_b[b:b+1], d_b[b:b+1], i_b[b:b+1], a_b[b:b+1])
-                batch_logits.append(model(nodes, base_adj))
-
-            logits = torch.cat(batch_logits, dim=0)
+            nodes = model.encode_nodes(u_b, d_b, i_b, a_b)
+            logits = model(nodes, base_adj)
             loss = criterion(logits, y_b)
             loss.backward()
             optimizer.step()
             running_loss += loss.item() * B
 
-        # Fast eval
+        # Batched evaluation
         model.eval()
         t_preds = []
+        n_test = len(y_te)
         with torch.no_grad():
-            for b in range(len(y_te)):
-                nodes = model.encode_nodes(
-                    u_te_t[b:b+1].to(device), d_te_t[b:b+1].to(device),
-                    i_te_t[b:b+1].to(device), a_te_t[b:b+1].to(device)
-                )
-                t_preds.append(torch.argmax(model(nodes, base_adj), dim=-1).item())
+            for i in range(0, n_test, batch_size):
+                u_b = u_te_t[i:i + batch_size].to(device)
+                d_b = d_te_t[i:i + batch_size].to(device)
+                i_b = i_te_t[i:i + batch_size].to(device)
+                a_b = a_te_t[i:i + batch_size].to(device)
+                nodes = model.encode_nodes(u_b, d_b, i_b, a_b)
+                batch_preds = torch.argmax(model(nodes, base_adj), dim=-1).cpu().numpy()
+                t_preds.extend(batch_preds)
 
         acc = accuracy_score(y_te, t_preds)
         f1 = f1_score(y_te, t_preds, average="macro", zero_division=0)
@@ -359,6 +400,34 @@ def main():
 
     log("Training complete. Artifacts successfully saved to /kaggle/working/")
 
+    hf_tok = HF_TOKEN or os.environ.get("HF_TOKEN", "")
+    if hf_tok:
+        log(f"Publishing GNN artifacts to Hugging Face Hub ({HF_REPO_ID})...")
+        try:
+            try:
+                import huggingface_hub
+            except ImportError:
+                import subprocess
+                subprocess.run([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub"], check=False)
+            from huggingface_hub import HfApi
+            api = HfApi(token=hf_tok)
+            for fname in ["url_gnn_model.pt", "url_gnn_scaler.joblib", "url_gnn_label_encoder.joblib", "url_gnn_metrics.json"]:
+                fpath = OUT_DIR / fname
+                if fpath.exists():
+                    api.upload_file(path_or_fileobj=str(fpath), path_in_repo=fname, repo_id=HF_REPO_ID, repo_type="model", token=hf_tok)
+                    log(f"Uploaded {fname} to Hugging Face Hub!")
+            log("All GNN artifacts successfully published to Hugging Face Hub!")
+        except Exception as e:
+            log(f"Hugging Face upload notice: {e}")
+
 
 if __name__ == "__main__":
-    main()
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        main()
+    except Exception as exc:
+        import traceback
+        with open(OUT_DIR / "CRASH_TRACEBACK.txt", "w") as f:
+            traceback.print_exc(file=f)
+        traceback.print_exc()
+        raise

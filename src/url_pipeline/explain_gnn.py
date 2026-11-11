@@ -27,6 +27,10 @@ from src.url_pipeline.gnn_model import URLInfraGNN
 from src.url_pipeline.gnn_graph_builder import build_url_star_graph
 from src.url_pipeline.whois_features import get_whois_features_for_url
 from src.url_pipeline.asn_features import get_asn_features_for_url
+try:
+    from model_registry import ensure_model
+except ImportError:
+    from src.model_registry import ensure_model
 
 MODELS_DIR = ROOT / "models"
 
@@ -34,16 +38,23 @@ MODELS_DIR = ROOT / "models"
 @lru_cache(maxsize=1)
 def load_gnn_artifacts():
     """Loads the trained GNN model weights, scaler, and label encoder."""
-    model_path = MODELS_DIR / "url_gnn_model.pt"
-    scaler_path = MODELS_DIR / "url_gnn_scaler.joblib"
-    le_path = MODELS_DIR / "url_gnn_label_encoder.joblib"
+    try:
+        model_path = ensure_model("url_gnn_model.pt")
+        scaler_path = ensure_model("url_gnn_scaler.joblib")
+        le_path = ensure_model("url_gnn_label_encoder.joblib")
+    except FileNotFoundError:
+        return None, None, None
 
     if not model_path.exists():
         return None, None, None
 
     checkpoint = torch.load(str(model_path), map_location="cpu")
+    inferred_url_dim = checkpoint.get("url_dim")
+    if inferred_url_dim is None and "url_proj.0.weight" in checkpoint.get("model_state_dict", {}):
+        inferred_url_dim = int(checkpoint["model_state_dict"]["url_proj.0.weight"].shape[1])
+
     model = URLInfraGNN(
-        url_dim=checkpoint.get("url_dim", 45),
+        url_dim=inferred_url_dim or 45,
         domain_dim=checkpoint.get("domain_dim", 8),
         ip_dim=checkpoint.get("ip_dim", 4),
         asn_dim=checkpoint.get("asn_dim", 4),

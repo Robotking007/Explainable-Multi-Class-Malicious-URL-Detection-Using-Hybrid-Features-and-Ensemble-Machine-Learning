@@ -52,8 +52,8 @@ def main():
         code = code.replace('HF_TOKEN = ""', f'HF_TOKEN = "{hf_token}"')
         print(f"Injected HF_TOKEN (length: {len(hf_token)}) into kernel code for direct Hugging Face upload.")
 
-    # Master dataset is siddudavant/cyberxai-combined-urls (public)
-    dataset_source = "siddudavant/cyberxai-combined-urls"
+    # Use user's dataset source
+    dataset_source = DATASET_SOURCE
 
     req = ApiSaveKernelRequest()
     req.slug = KERNEL_SLUG

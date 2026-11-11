@@ -5,12 +5,7 @@ import {
   Send,
   Trash2,
   Sparkles,
-  AlertCircle,
-  Shield,
-  Layers,
-  Terminal,
-  RefreshCw,
-  Info
+  AlertCircle
 } from 'lucide-react';
 import chatbotService from '../services/chatbotService';
 import { useBackend } from '../context/BackendContext';
@@ -25,8 +20,9 @@ export const SecurityAssistant = () => {
       id: 'init-msg',
       role: 'assistant',
       content:
-        'Welcome to the CyberX AI Security Assistant workstation. You can query me on Graph Neural Network URL inference, zero-day malware behavioral patterns (CIC-MalMem-2022, BODMAS, MalAPI2019), or ask for interpretation of SHAP/Gradient attribution scores.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        'Welcome to the CyberX AI Security Assistant workstation, powered by Google Gemini 3.5 Flash. You can query me on Graph Neural Network URL inference, zero-day malware behavioral patterns (CIC-MalMem-2022, BODMAS, MalAPI2019), or ask for real-time interpretation of SHAP/Gradient attribution scores and dynamic browser sandbox traces.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      model: 'gemini-3.5-flash'
     }
   ]);
   const [inputText, setInputText] = useState('');
@@ -66,6 +62,8 @@ export const SecurityAssistant = () => {
         id: `b-${Date.now()}`,
         role: 'assistant',
         content: res.content,
+        model: res.model || 'gemini-3.5-flash',
+        provider: res.provider || 'Google Gemini 3.5 Flash',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages((prev) => [...prev, botMsg]);
@@ -82,7 +80,8 @@ export const SecurityAssistant = () => {
         id: 'reset',
         role: 'assistant',
         content: 'Session cleared. Ready for your cybersecurity or model interpretability query.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        model: 'gemini-3.5-flash'
       }
     ]);
     setError(null);
@@ -95,15 +94,19 @@ export const SecurityAssistant = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="soc-badge-cyan text-xs font-mono">LLM & XAI COPILOT</span>
             <span className="text-xs text-slate-400 font-mono">• Interactive SOC Assistant</span>
+            <span className="px-2.5 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 font-mono text-[11px] flex items-center gap-1.5 shadow-sm">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span>Google Gemini 3.5 Flash</span>
+            </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-100 font-mono tracking-tight mt-1">
             AI Security Assistant
           </h1>
           <p className="text-xs text-slate-400 max-w-2xl mt-1">
-            Dedicated domain assistant connected to your FastAPI backend for interactive threat explanation and GNN graph analysis interpretation.
+            Dedicated domain assistant connected to Google Gemini 3.5 Flash for interactive threat explanation, GNN graph analysis, and dynamic sandbox interpretation.
           </p>
         </div>
 
@@ -139,13 +142,17 @@ export const SecurityAssistant = () => {
                 }`}
               >
                 <p className="whitespace-pre-wrap">{m.content}</p>
-                <span
-                  className={`block text-[10px] mt-1.5 font-mono text-right ${
-                    m.role === 'user' ? 'text-cyan-950/70' : 'text-slate-400'
-                  }`}
-                >
-                  {m.timestamp}
-                </span>
+                <div className="flex items-center justify-between gap-2 mt-2 pt-1 border-t border-slate-800/60 text-[10px] font-mono">
+                  {m.role === 'assistant' ? (
+                    <span className="text-cyan-400/80 flex items-center gap-1">
+                      <Sparkles className="w-2.5 h-2.5" />
+                      {m.model || 'Gemini 3.5 Flash'}
+                    </span>
+                  ) : <span />}
+                  <span className={m.role === 'user' ? 'text-cyan-950/70' : 'text-slate-400'}>
+                    {m.timestamp}
+                  </span>
+                </div>
               </div>
 
               {m.role === 'user' && (

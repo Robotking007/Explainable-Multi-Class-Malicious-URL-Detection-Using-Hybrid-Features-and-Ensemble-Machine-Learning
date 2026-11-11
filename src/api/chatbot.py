@@ -24,18 +24,20 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
+DEFAULT_MODEL = "gemini-3.5-flash"
 
 SYSTEM_PREAMBLE = (
-    "You are the explanation assistant embedded in CyberXAI, a college project "
-    "dashboard for explainable malicious URL / malware detection. You explain "
-    "ONE real prediction the project's own trained ensemble (RandomForest + "
-    "XGBoost + LogisticRegression + NaiveBayes, or the malware baselines) just "
-    "made, using the real SHAP feature attributions provided below. Stay "
-    "grounded in that data -- do not invent a different verdict, confidence, "
-    "or features than what's given. If no scan context is provided, say so "
-    "and suggest the user run a scan first. Keep answers concise (2-5 "
-    "sentences unless asked for more detail)."
+    "You are the CyberXAI Security Analyst Assistant powered by Google Gemini 3.5 Flash, "
+    "embedded in an advanced Explainable AI (XAI) security dashboard for multi-class malicious URL "
+    "and malware detection. You assist security operations center (SOC) analysts and researchers.\n\n"
+    "Key capabilities:\n"
+    "1. Explain real predictions from CyberXAI models (URLInfraGNN, HybridURLNet, classical Voting Ensemble, "
+    "and CIC-MalMem-2022 malware classifiers) using quantitative SHAP and gradient attributions.\n"
+    "2. If an active scan context is provided below, ground your response directly in its predicted class, "
+    "confidence, feature values, and SHAP directions. Do not contradict the model's actual verdict.\n"
+    "3. If no active scan context is provided, answer the user's cybersecurity, threat intelligence, "
+    "machine learning, or SOC analysis query accurately, concisely, and authoritatively.\n"
+    "4. Keep explanations clear, practical, and forensic (typically 2-5 concise sentences unless deeper analysis is requested)."
 )
 
 
@@ -54,11 +56,23 @@ def _load_api_key() -> str | None:
     return None
 
 
+def _load_model_name() -> str:
+    env_model = os.environ.get("GEMINI_MODEL")
+    if env_model:
+        return env_model
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("GEMINI_MODEL="):
+                return line.split("=", 1)[1].strip()
+    return DEFAULT_MODEL
+
+
 def _format_context(context: dict | None) -> str:
     if not context:
-        return "No scan has been run yet in this session."
+        return "No specific scan context provided for this prompt."
     lines = [
-        f"Predicted class: {context.get('predicted_class')}",
+        f"Predicted class: {context.get('predicted_class') or context.get('classification') or 'Unknown'}",
         f"Confidence: {context.get('confidence')}",
     ]
     if context.get("url"):
@@ -82,22 +96,28 @@ def ask_chatbot(message: str, context: dict | None, history: list[dict] | None =
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured in .env")
 
+    model_name = _load_model_name()
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+
     contents = [
-        {"role": "user", "parts": [{"text": SYSTEM_PREAMBLE + "\n\nScan context:\n" + _format_context(context)}]},
-        {"role": "model", "parts": [{"text": "Understood, I'll explain this result grounded in that data."}]},
+        {"role": "user", "parts": [{"text": SYSTEM_PREAMBLE + "\n\nActive Scan Context:\n" + _format_context(context)}]},
+        {"role": "model", "parts": [{"text": f"Understood. I am your CyberXAI Security Assistant powered by Gemini 3.5 Flash. I will evaluate queries grounded in this security telemetry."}]},
     ]
     for turn in (history or [])[-10:]:
-        role = "model" if turn.get("role") == "model" else "user"
-        contents.append({"role": role, "parts": [{"text": turn.get("text", "")}]})
+        role = "model" if turn.get("role") in ("model", "assistant") else "user"
+        turn_text = turn.get("text") or turn.get("content") or ""
+        if turn_text:
+            contents.append({"role": role, "parts": [{"text": turn_text}]})
     contents.append({"role": "user", "parts": [{"text": message}]})
 
     payload = json.dumps({"contents": contents}).encode()
     req = urllib.request.Request(
-        GEMINI_URL, data=payload,
+        f"{gemini_url}?key={api_key}",
+        data=payload,
         headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=25) as resp:
             body = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         detail = e.read().decode()[:300]

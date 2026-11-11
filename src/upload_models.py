@@ -53,7 +53,8 @@ def main():
     repo_id = f"{who['name']}/{REPO_ID_SUFFIX}"
     api = HfApi(token=token)
     api.create_repo(repo_id=repo_id, repo_type="model", private=args.private, exist_ok=True)
-    log(f"Target repo: https://huggingface.co/{repo_id}")
+    api.update_repo_settings(repo_id=repo_id, repo_type="model", private=args.private)
+    log(f"Target repo (private={args.private}): https://huggingface.co/{repo_id}")
 
     if args.files:
         paths = [MODEL_DIR / f for f in args.files]

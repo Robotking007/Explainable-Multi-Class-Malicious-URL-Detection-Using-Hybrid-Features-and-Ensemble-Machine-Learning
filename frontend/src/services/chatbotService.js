@@ -39,6 +39,8 @@ export const chatbotService = {
             role: 'assistant',
             content: reply,
             timestamp: new Date().toISOString(),
+            model: response.data?.model || 'gemini-3.5-flash',
+            provider: response.data?.provider || 'Google Gemini (Gemini 3.5 Flash)',
             sources: response.data?.sources || response.data?.references || []
           };
         }

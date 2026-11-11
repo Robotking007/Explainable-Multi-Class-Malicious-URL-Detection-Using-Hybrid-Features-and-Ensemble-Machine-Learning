@@ -9,7 +9,10 @@ mal-api-2019/1000_calls.txt). Outputs saved to /kaggle/working/.
 """
 import subprocess
 import sys
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "shap"], check=False)
+try:
+    import shap  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "shap"], check=False)
 
 import json
 import time
