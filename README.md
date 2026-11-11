@@ -4,6 +4,15 @@
 
 Every URL and malware verdict is paired with sub-second quantitative explainability (**GradientSHAP**, **Layer-2 GAT Attention $\alpha_{ij}$**, and **TreeSHAP**), while large model checkpoints are hosted securely in a **private Hugging Face Model Hub repository** ([`siddudavant/cyberxai-models`](https://huggingface.co/siddudavant/cyberxai-models)) with automatic on-demand hydration via [`src/model_registry.py`](src/model_registry.py).
 
+### Quick Project Links
+
+| Resource | Repository / Endpoint | Visibility |
+| :--- | :--- | :--- |
+| **GitHub Source Code** | [`Robotking007/Explainable-Multi-Class-Malicious-URL-Detection-Using-Hybrid-Features-and-Ensemble-Machine-Learning`](https://github.com/Robotking007/Explainable-Multi-Class-Malicious-URL-Detection-Using-Hybrid-Features-and-Ensemble-Machine-Learning) | Public |
+| **Hugging Face Model Registry** | [`siddudavant/cyberxai-models`](https://huggingface.co/siddudavant/cyberxai-models) *(31 synced model/scaler/metric artifacts)* | **Private** (`HF_TOKEN`) |
+| **Kaggle Combined URL Corpus** | [`robotking007/cyberxai-combined-urls`](https://www.kaggle.com/datasets/robotking007/cyberxai-combined-urls) · [`siddudavant/cyberxai-combined-urls`](https://www.kaggle.com/datasets/siddudavant/cyberxai-combined-urls) | Private Compute Datasets |
+| **Kaggle MalAPI2019 Mirror** | [`siddudavant/cyberxai-malapi2019`](https://www.kaggle.com/datasets/siddudavant/cyberxai-malapi2019) | Private Compute Dataset |
+
 ---
 
 ## Table of Contents
@@ -33,9 +42,17 @@ Every URL and malware verdict is paired with sub-second quantitative explainabil
    - [Explainable AI (XAI) Engine Comparison](#3-explainable-ai-xai-engine-comparison)
    - [External Threat Intelligence & AI Services](#4-external-threat-intelligence--ai-services)
 5. [Dataset Corpus & Threat Feed Consolidation](#dataset-corpus--threat-feed-consolidation)
-6. [Private Hugging Face Model Registry](#private-hugging-face-model-registry)
+   - [Consolidated Corpus Distributions](#1-consolidated-corpus-distributions)
+   - [Live Threat Feeds & Allowlists](#2-live-threat-intelligence-feeds--allowlists)
+   - [URL Benchmark Corpora, Polarity Handling & Exclusions](#3-url-benchmark-corpora-polarity-handling--exclusions)
+   - [Malware Forensics, Static PE & API Sequence Datasets](#4-malware-forensics-static-pe--api-sequence-datasets)
+6. [Private Hugging Face Model Registry & Cloud Compute Links](#private-hugging-face-model-registry--cloud-compute-links)
 7. [MLOps, CI/CD, Kaggle Cloud Compute & Green Computing](#mlops-cicd-kaggle-cloud-compute--green-computing)
 8. [Quick Start & Usage](#quick-start--usage)
+9. [Research Paper & Benchmark Dataset References](#research-paper--benchmark-dataset-references)
+   - [Literature-to-CyberXAI Module Mapping](#1-literature-to-cyberxai-module-mapping)
+   - [Detailed Research Paper References](#2-detailed-research-paper-references)
+   - [Threat Intelligence Feeds & Standards Links](#3-threat-intelligence-feeds--standards-links)
 
 ---
 
@@ -273,11 +290,11 @@ Extracted via Mozilla's Public Suffix List (`tldextract`) to separate `subdomain
 | :---: | :--- | :---: | :--- | :--- |
 | 38 | `url_entropy` | Float | Shannon entropy $H(s)$ over entire normalized URL | Quantifies global randomness across hostname, path, and query. |
 | 39 | `compression_ratio` | Float | $\text{len}(\text{zlib.compress}(s)) / \max(\text{len}(s), 1)$ | Random DGA/hash URLs resist DEFLATE compression (high ratio); repetitive padding compresses tightly (low ratio). |
-| 40 | `char_diversity` | Float | $|\text{set}(s)| / \max(\text{len}(s), 1)$ | Proportion of distinct characters across the URL string. |
+| 40 | `char_diversity` | Float | $\lvert\text{set}(s)\rvert / \max(\text{len}(s), 1)$ | Proportion of distinct characters across the URL string. |
 | 41 | `token_count` | Int | Token count splitting on `[/\-_.?=&%@:]+` | Captures total lexical token density across all URL segments. |
 | 42 | `avg_token_length` | Float | Mean character length of extracted tokens | Malicious URLs often embed long encoded tokens (hashes/UUIDs/Base64 strings). |
 | 43 | `max_token_length` | Int | Maximum character length among extracted tokens | Isolates single abnormally long obfuscated payload tokens. |
-| 44 | `unique_token_ratio` | Float | $|\text{set}(\text{tokens})| / \text{len}(\text{tokens})$ | Repetitive directory/keyword stuffing lowers token uniqueness. |
+| 44 | `unique_token_ratio` | Float | $\lvert\text{set}(\text{tokens})\rvert / \text{len}(\text{tokens})$ | Repetitive directory/keyword stuffing lowers token uniqueness. |
 | 45 | `special_char_ratio` | Float | Non-alphanumeric char count $/ \max(\text{len}(s), 1)$ | Elevated punctuation/control-character density correlates with obfuscated payloads. |
 
 > **Additional Classical Ensemble Block (`features.py` & `train.py`):** The classical Soft-Voting Ensemble (`train.py`) also supports character-level **TF-IDF n-gram features** (`ngram_range=(2, 3)`, `max_features=100`, float32-cast before densification, fit strictly on the training split).
@@ -421,30 +438,65 @@ Built with **React 19**, **Vite 8**, **Tailwind CSS 3**, **ReactFlow**, **Rechar
 
 ## Dataset Corpus & Threat Feed Consolidation
 
-Multiple multi-source consolidation pipelines maintain clean, deduplicated, canonical 4-class URL corpora (`benign`, `phishing`, `defacement`, `malware`):
+CyberXAI maintains strictly deduplicated, canonical 4-class URL corpora (`benign`, `phishing`, `defacement`, `malware`) alongside static, dynamic, and API-sequence malware benchmarks using three deterministic ingestion pipelines:
 
-1. **`src/url_pipeline/build_combined_dataset.py` (32-Source SQLite Priority Merger):** Streams up to 32 public Kaggle, Hugging Face, PhishTank, Abuse.ch ThreatFox/URLhaus, and OTX sources through an indexed on-disk SQLite table (`PRIMARY KEY(url)`), resolving cross-source label conflicts deterministically by source priority and sorting `A–Z` without exhausting 16 GB RAM.
-2. **`src/merge_sort_datasets.py` (17-Source Metadata-Enriched Merger):** Outputs `Dataset/merged_clean_urls.csv` and `Dataset/merged_clean_urls.pkl` with `published_year`, `how_detected`, and `who_published_flags`, while preserving `defacement` priority (`LABEL_PRIORITY`: `defacement=10`, `malware=5`, `phishing=4`, `benign=1`) and cleaning intermediate raw files.
-3. **`src/url_pipeline/merge_new_threat_data.py` & `src/fetch_abusech_data.py`:** Incrementally fetches authenticated ThreatFox + URLhaus exports, deduplicates against PhishTank and `merged_clean_urls.csv`, and emits clean delta records to `Dataset/fresh_threat_intel_update.csv`.
+1. **[`src/url_pipeline/build_combined_dataset.py`](src/url_pipeline/build_combined_dataset.py) (32-Source SQLite Priority Merger):** Streams up to 32 public Kaggle, Hugging Face, PhishTank, Abuse.ch ThreatFox/URLhaus, and OTX sources through an indexed on-disk SQLite table (`PRIMARY KEY(url)`), resolving cross-source label conflicts deterministically (~2.16% overlap rate) by priority and sorting `A–Z` within 16 GB RAM.
+2. **[`src/merge_sort_datasets.py`](src/merge_sort_datasets.py) (17-Source Metadata-Enriched Merger):** Outputs `Dataset/merged_clean_urls.csv` (`1.61 GB`) and `Dataset/merged_clean_urls.pkl` (`793 MB`) enriched with `published_year`, `how_detected`, and `who_published_flags`, enforcing strict conflict priority (`LABEL_PRIORITY`: `defacement=10`, `malware=5`, `phishing=4`, `benign=1`) so specific labels never get overwritten by generic binary feeds.
+3. **[`src/url_pipeline/merge_new_threat_data.py`](src/url_pipeline/merge_new_threat_data.py) & [`src/fetch_abusech_data.py`](src/fetch_abusech_data.py):** Fetches authenticated ThreatFox + URLhaus exports, deduplicates against PhishTank and `merged_clean_urls.csv`, and appends delta records to `Dataset/fresh_threat_intel_update.csv` (`163,512` delta rows).
 
-<details>
-<summary><strong>Merged URL & Malware Data Sources Summary (click to expand)</strong></summary>
+### 1. Consolidated Corpus Distributions
 
-| Domain | Dataset / Feed | Role / Taxonomy | Scale |
+| Dataset Artifact / Pipeline | Total Rows | Class / Label Breakdown | Coverage / Enrichment Notes |
+| :--- | :---: | :--- | :--- |
+| **`Dataset/merged_clean_urls.csv`** (`merge_sort_datasets.py`) | **13,219,906** | `phishing`: 6,470,775 · `benign`: 6,174,777 · `malware`: 479,613 · `defacement`: 94,741 | Enriched across 17 sources (`who_published_flags`, `how_detected`, `published_year`) |
+| **`Dataset/combined_urls.csv`** (`build_combined_dataset.py`) | **20,946,068** | `benign`: 11,292,992 · `phishing`: 9,264,267 · `defacement`: 201,997 · `malware`: 186,812 | Prior training pool (~2.16% cross-source conflict rate resolved by SQLite priority) |
+| **Scale Training Pool (`HybridURLNet` / `URLInfraGNN`)** | **27,059,515** | Multi-class stratified splits (`24,353,563` train / `2,705,952` test) | Streaming chunked mini-batch PyTorch training with focal/class-weighted loss |
+| **Domain Infrastructure Caches (`11,744,984` domains)** | `11.74M` ASN · `593k+` WHOIS | **ASN**: 100% attempted, `48.8%` BGP-resolved · **WHOIS**: `593,005` rows locally (`997,994` / `~8.5%` chained) | Used for live API enrichment ([`whois_features.py`](src/url_pipeline/whois_features.py), [`asn_features.py`](src/url_pipeline/asn_features.py)) & `run_whois_ablation.py` |
+
+### 2. Live Threat Intelligence Feeds & Allowlists
+
+| Feed / Source | Endpoint / Script | Role in CyberXAI | Observed Raw Scale | Deduplicated Contribution (`merged_clean_urls.csv`) |
+| :--- | :--- | :--- | :---: | :---: |
+| **PhishTank (`verified_online.csv`)** | [phishtank.net](https://phishtank.net/) · [Developer API](https://phishtank.net/developer_info.php) | Human-verified live `phishing` submissions & impersonated brand metadata | `61,962` URLs | `60,651` *(Priority-1 phishing)* |
+| **OpenPhish (`openphish_feed.txt`)** | [openphish.com](https://openphish.com/) · [`feed.txt`](https://openphish.com/feed.txt) ([`download_more_datasets.py`](src/download_more_datasets.py)) | Autonomous zero-day `phishing` crawler feed | Continuous live feed | Merged via delta & live scripts |
+| **abuse.ch ThreatFox (`threatfox_full.csv`)** | [threatfox.abuse.ch](https://threatfox.abuse.ch/) · [API Docs](https://threatfox.abuse.ch/api/) ([`fetch_abusech_data.py`](src/fetch_abusech_data.py)) | Authenticated `malware` C2 / payload IOCs + confidence scores & runtime lookup (`abuse_features.py`) | `129,642` IOCs | `68,324` *(+ runtime IOC match)* |
+| **abuse.ch URLhaus (`file.csv.txt`)** | [urlhaus.abuse.ch](https://urlhaus.abuse.ch/) · [API Docs](https://urlhaus.abuse.ch/api/) ([`fetch_abusech_data.py`](src/fetch_abusech_data.py)) | Curated active `malware` payload distribution URLs & online status (`abuse_features.py`) | `73,237` URLs | `72,519` *(+ runtime IOC match)* |
+| **Delta Threat Update (`fresh_threat_intel_update.csv`)** | [`merge_new_threat_data.py`](src/url_pipeline/merge_new_threat_data.py) | Deduplicated delta export of ThreatFox, URLhaus & PhishTank updates | `163,512` URLs | `163,512` |
+| **Tranco Top 1M (`tranco_top_1m.csv`)** | [tranco-list.eu](https://tranco-list.eu/) · [`top-1m.csv.zip`](https://tranco-list.eu/top-1m.csv.zip) | Research-hardened benign apex domain consensus ranking (top 50k ingested + authoritative domains) | `1,000,000` domains | `48,942` *(+ `3` root registry entries)* |
+
+### 3. URL Benchmark Corpora, Polarity Handling & Exclusions
+
+| Dataset / Corpus | Source Platform & Direct Link | Taxonomy / Polarity Notes | Scale / Observed Contribution |
 | :--- | :--- | :--- | :--- |
-| **URL Threats** | PhishTank (`verified_online.csv`) & OpenPhish | Human-verified & live zero-day `phishing` feeds | Continuous live feeds |
-| **URL Threats** | Abuse.ch ThreatFox (`threatfox_full.csv`) & URLhaus (`file.csv.txt`) | Authenticated `malware` C2 & payload delivery IOCs | Continuous live feeds |
-| **URL Threats** | Tranco Top 1M (`tranco_top_1m.csv`) & Authoritative Root Domains | Gold-standard `benign` apex domains | 1,000,000+ domains |
-| **URL Corpora** | Kaggle `malicious_phish.csv`, `MUD_malicious_urls_2026_V2.csv`, `zhengxian_12M`, `somanshumahajan_6M`, `siddharthkumar25`, `shashwatwork`, `PhiUSIIL` (polarity-inverted), HF `phreshphish` (2025–2026), `Naren1704`, `kmack` | Multi-class (`benign`, `phishing`, `defacement`, `malware`) & binary corpora | 20.9M–27.0M combined rows |
-| **Malware (Dyn)** | `Obfuscated-MalMem2022.parquet` | 55 Volatility memory features (`Benign`, `Spyware`, `Trojan`, `Ransomware`) | 58,058 rows |
-| **Malware (PE)** | `bodmas.parquet` + `train/test_ember_2018_v2_features.parquet` | 2,381 EMBER static PE features (`Benign` vs `Malware`) | 734,348 train + 199,956 external test |
-| **Malware (API)** | `Dataset/malapi2019` | Windows API 1,000-call sequences across 8 malware families | 7,107 samples |
+| **Malicious URLs Dataset (`malicious_phish.csv`)** | Kaggle [`sid321axn/malicious-urls-dataset`](https://www.kaggle.com/datasets/sid321axn/malicious-urls-dataset) | Canonical 4-class baseline (`benign`, `defacement`, `phishing`, `malware`) built from ISCX-URL-2016, Zone-H, MDL, DMOZ/Alexa | `651,191` raw rows (`728,415` Alexa/DMOZ · `121,958` MDL · `94,741` Zone-H · `45,742` APWG attribution preserved) |
+| **PhiUSIIL Phishing URL Dataset** | UCI [`Dataset #967`](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset) · Kaggle [`muhammadfaizanhassan/phiusiil-phishing-url-website`](https://www.kaggle.com/datasets/muhammadfaizanhassan/phiusiil-phishing-url-website) | **Inverted polarity (`1=benign`, `0=phishing`)** verified & explicitly flipped during ingestion | `235,795` raw rows (`121,776` net retained in `merged_clean_urls.csv`) |
+| **PhreshPhish (2025–2026)** | Hugging Face [`phreshphish/phreshphish`](https://huggingface.co/datasets/phreshphish/phreshphish) · [arXiv:2507.10854](https://arxiv.org/abs/2507.10854) | Out-of-time 2025–2026 live HTML-URL phishing/benign benchmark | `666,315` rows (`url` & `label` ingested into `build_combined_dataset.py`) |
+| **StealthPhisher2025** | Mendeley Data [`DOI: 10.17632/m2479kmybx`](https://doi.org/10.17632/m2479kmybx) | Contemporary `legitimate`/`phishing` URL & statistical entropy corpus | `336,749` raw rows (`160,943` benign / `175,806` phishing) |
+| **PhishVN (v3.1.0)** | Mendeley Data [`DOI: 10.1016/j.dib.2026.113195`](https://doi.org/10.1016/j.dib.2026.113195) · [`10.17632/b97hxbxtpd`](https://doi.org/10.17632/b97hxbxtpd) | Time-stamped Vietnamese & global `phishing`/`benign` URLs mitigating TLD geographic bias | `53,000+` records |
+| **Web Page Phishing Detection** | Kaggle [`shashwatwork/web-page-phishing-detection-dataset`](https://www.kaggle.com/datasets/shashwatwork/web-page-phishing-detection-dataset) | Balanced 50/50 legitimate/phishing URL corpus (`dataset_phishing.csv`, Hannousse & Yahiouche) | `11,430` URLs |
+| **Phishing Site URLs** | Kaggle [`taruntiwarihp/phishing-site-urls`](https://www.kaggle.com/datasets/taruntiwarihp/phishing-site-urls) | Binary `good` (`benign`) / `bad` (`phishing`) corpus | `549,000+` rows |
+| **KMack Phishing URLs** | Hugging Face [`kmack/Phishing_urls`](https://huggingface.co/datasets/kmack/Phishing_urls) | Verified `0=benign` / `1=phishing` URL split | `708,820` rows |
+| **Naren1704 Phishing Dataset** | Hugging Face [`Naren1704/phishing-dataset`](https://huggingface.co/datasets/Naren1704/phishing-dataset) | Compiled multi-source phishing/benign `urls.json` (deduplicated against overlap) | `835,697` rows |
+| **Phishing and Legitimate URLs** | Kaggle [`harisudhan411/phishing-and-legitimate-urls`](https://www.kaggle.com/datasets/harisudhan411/phishing-and-legitimate-urls) | **Inverted binary (`0=phishing`, `1=benign`)** (`new_data_urls.csv`) | `800k+` raw (`269,342` unique in `merged_clean_urls.csv`) |
+| **Benign and Malicious URLs** | Kaggle [`samahsadiq/benign-and-malicious-urls`](https://www.kaggle.com/datasets/samahsadiq/benign-and-malicious-urls) | Binary (`balanced_urls.csv`); in `build_combined_dataset.py` **only `benign` kept** because generic `malicious` lacks 4-class distinction | `632,508` raw (`90,753` net retained in `merged_clean_urls.csv`) |
+| **Malicious And Benign URLs** | Kaggle [`siddharthkumar25/malicious-and-benign-urls`](https://www.kaggle.com/datasets/siddharthkumar25/malicious-and-benign-urls) | `urldata.csv` (`benign` / `malicious`) mined from PhishTank | `450,176` rows |
+| **Large-Scale Multi-Million URL Corpora** | Kaggle handles [`antonyj453/urldataset`](https://www.kaggle.com/datasets/antonyj453/urldataset), `zhengxian_12M_urls.csv`, `somanshumahajan_6M_urls.csv`, `dhrubangtalukdar_phishing_url_dataset_unique.csv`, `MUD_malicious_urls_2026_V2.csv`, `DomainGuard-50K.csv`, `ASA_Phishing_URL_Dataset.csv` | Polarity-audited URL sets feeding SQLite & metadata mergers (`zhengxian`: `11,055,088`, `somanshumahajan`: `251,644`, `dhrubangtalukdar`: `26,496` net in `merged_clean_urls.csv`) | `~18.5M+` raw rows prior to global deduplication |
+| **CyberXAI Consolidated Uploads** | Kaggle [`robotking007/cyberxai-combined-urls`](https://www.kaggle.com/datasets/robotking007/cyberxai-combined-urls) · [`siddudavant/cyberxai-combined-urls`](https://www.kaggle.com/datasets/siddudavant/cyberxai-combined-urls) | Consolidated deduplicated CSV staged for multi-GPU Kaggle cloud kernels (`src/kaggle_upload_dataset.py`) | `20.9M–27.0M` rows |
+| **Deliberately Excluded / Filtered** | `merged_urls_dataset.csv` (`adult` rows) · `Phishing Website Detection Dataset/` (`6.5M` plaintext) · `Dataset I.csv` / `Dataset II.csv` (malicious side) | `3.37M` out-of-taxonomy `adult` rows dropped; `Phishing Website Detection` quarantined after sampling found mislabelled adult-content records; generic malicious labels excluded where 4-class subtype is ambiguous | Strict label integrity |
 
-</details>
+### 4. Malware Forensics, Static PE & API Sequence Datasets
+
+| Module | Dataset File (`Dataset/`) | Upstream Repository / Source | Schema & Class Distribution | Status in CyberXAI |
+| :--- | :--- | :--- | :--- | :--- |
+| **Module A (Dynamic Mem)** | `Obfuscated-MalMem2022.parquet` (`4.26 MB`) | [UNB CIC-MalMem-2022](https://www.unb.ca/cic/datasets/malmem-2022.html) (Carrier et al., ICISSP 2022) | **58,058 rows**, 55 Volatility features: `Benign` (`29,227`), `Spyware` (`9,815`), `Ransomware` (`9,529`), `Trojan` (`9,487`) | **Active** (`46,446` train / `11,612` test) |
+| **Module A' (Static PE)** | `bodmas.parquet` (`420 MB`) + `train_ember_2018_v2_features.parquet` (`2.09 GB`) | [BODMAS GitHub](https://github.com/whyisyoung/BODMAS) / [Project Page](https://whyisyoung.github.io/BODMAS/) & [EMBER GitHub](https://github.com/elastic/ember) | Identical **2,381 EMBER PE features**: `BODMAS` = `134,428` (`Benign`: 77,138, `Malware`: 57,290); `EMBER Train` = `799,912` (`599,920` labeled: 299,991 benign / 299,929 malware; `199,992` unlabeled `-1` filtered out) | **Active** (`587,478` train / `146,870` holdout from `734,348` pool) |
+| **Module A' (External Val)** | `test_ember_2018_v2_features.parquet` (`565 MB`) | [EMBER-2018 v2 Test Split](https://github.com/elastic/ember) ([arXiv:1804.04637](https://arxiv.org/abs/1804.04637)) | **199,956 rows** (`Benign`: 99,985, `Malware`: 99,971) from an unseen later time period | **Active External Test** (`96.60%` acc / `0.9942` AUC) |
+| **Module A'' (API Seq)** | `Dataset/malapi2019/` (`labels.txt` + API trace sequences) | Kaggle [`focatak/malapi2019`](https://www.kaggle.com/datasets/focatak/malapi2019) · Mirror [`siddudavant/cyberxai-malapi2019`](https://www.kaggle.com/datasets/siddudavant/cyberxai-malapi2019) | **7,107 samples** (1,000-call Cuckoo traces, 8 families, **no benign class**): `Trojan` (1,001), `Backdoor` (1,001), `Downloader` (1,001), `Worms` (1,001), `Virus` (1,001), `Dropper` (891), `Spyware` (832), `Adware` (379) | **Active** (`5,685` train / `1,422` test) |
+| **Evaluated / Deferred** | *Avast-CTU CAPE*, *Oliveira API Seq*, *SOREL-20M* | [Avast-CTU CAPE (arXiv:2209.03188)](https://arxiv.org/abs/2209.03188) · Oliveira Kaggle (`42,797` seq) · [SOREL-20M (arXiv:2012.07634)](https://arxiv.org/abs/2012.07634) | Avast-CTU (`48,976` CAPEv2 JSON logs, 10 families): deferred sandbox extractor; Oliveira (`42,797` malware / `1,079` benign): rejected for Module A'' (binary only, lacks 8 families); SOREL-20M: `pe_metadata` shard alone exceeds `515 GB+`, superseded by EMBER-2018 | Documented architectural alternatives |
 
 ---
 
-## Private Hugging Face Model Registry
+## Private Hugging Face Model Registry & Cloud Compute Links
 
 All **31 production checkpoints, scalers, encoders, vectorizers, and metrics JSONs** are stored in the **private** Hugging Face repository [`siddudavant/cyberxai-models`](https://huggingface.co/siddudavant/cyberxai-models) (never committed to git). On a fresh clone, [`src/model_registry.py`](src/model_registry.py) downloads any missing artifact automatically via `HF_TOKEN`.
 
@@ -456,6 +508,21 @@ All **31 production checkpoints, scalers, encoders, vectorizers, and metrics JSO
 | **Malware Dynamic** | `malware_dynamic_rf_multiclass_family.joblib` (`282.7 MB`), `malware_dynamic_xgb_multiclass_family.joblib` (`5.74 MB`), `malware_dynamic_rf_binary_benign_vs_malware.joblib` (`1.60 MB`), `malware_dynamic_xgb_binary_benign_vs_malware.joblib` (`279 KB`), binary & multiclass label encoders, `malware_module_a_dynamic_baseline_metrics.json` | Random Forest + XGBoost (`CIC-MalMem-2022`) |
 | **Malware Static PE** | `malware_static_rf.joblib` (`531.4 MB`), `malware_static_xgb.joblib` (`2.75 MB`), `malware_module_a_static_baseline_metrics.json` | Random Forest + XGBoost (`BODMAS + EMBER`) |
 | **Malware API Sequence** | `malware_api_sequence_rf.joblib` (`110.9 MB`), `malware_api_sequence_xgb.joblib` (`6.80 MB`), `malware_api_sequence_vectorizer.joblib`, `malware_api_sequence_label_encoder.joblib`, `malware_module_a_api_sequence_metrics.json` | Random Forest + XGBoost + TF-IDF (`MalAPI2019`) |
+
+### Project Repositories & Kaggle Compute Links
+
+| Component / Account | Direct URL | Role / Compute Scope |
+| :--- | :--- | :--- |
+| **GitHub Repository (`origin/master`)** | [`Robotking007/Explainable-Multi-Class-Malicious-URL-Detection-Using-Hybrid-Features-and-Ensemble-Machine-Learning`](https://github.com/Robotking007/Explainable-Multi-Class-Malicious-URL-Detection-Using-Hybrid-Features-and-Ensemble-Machine-Learning) | Source code, FastAPI API, React 19 UI, Airflow DAGs & CI workflow |
+| **Private Hugging Face Model Hub** | [`siddudavant/cyberxai-models`](https://huggingface.co/siddudavant/cyberxai-models) | Private artifact store syncing all 31 serialized models & metric JSONs |
+| **Kaggle Combined URL Datasets** | [`robotking007/cyberxai-combined-urls`](https://www.kaggle.com/datasets/robotking007/cyberxai-combined-urls) · [`siddudavant/cyberxai-combined-urls`](https://www.kaggle.com/datasets/siddudavant/cyberxai-combined-urls) | Staged consolidated multi-million URL training datasets |
+| **Kaggle MalAPI2019 Dataset** | [`siddudavant/cyberxai-malapi2019`](https://www.kaggle.com/datasets/siddudavant/cyberxai-malapi2019) | Staged Windows API trace sequence dataset (`7,107` samples) |
+| **Kaggle Kernel — `HybridURLNet` (GPU)** | [`robotking007/cyberxai-url-deep-learning-training`](https://www.kaggle.com/code/robotking007/cyberxai-url-deep-learning-training) | PyTorch residual URL classifier ([`src/kaggle_kernel_train_url_dl.py`](src/kaggle_kernel_train_url_dl.py)) |
+| **Kaggle Kernel — `URLInfraGNN` (CPU)** | [`robotking007/cyberxai-url-infrastructure-gnn-training`](https://www.kaggle.com/code/robotking007/cyberxai-url-infrastructure-gnn-training) | Heterogeneous GAT URL graph trainer ([`src/kaggle_kernel_train_url_gnn.py`](src/kaggle_kernel_train_url_gnn.py)) |
+| **Kaggle Kernel — Module B URL Ensemble** | [`siddhantudavant/cyberxai-url-module-b-deep-learning-training`](https://www.kaggle.com/code/siddhantudavant/cyberxai-url-module-b-deep-learning-training) | Cloud URL soft-voting & deep learning training run |
+| **Kaggle Kernel — Dynamic Malware (Mod A)** | [`siddudavant/cyberxai-dynamic-malware-training`](https://www.kaggle.com/code/siddudavant/cyberxai-dynamic-malware-training) | CIC-MalMem-2022 RF/XGBoost trainer ([`src/kaggle_kernel_train_dynamic_malware.py`](src/kaggle_kernel_train_dynamic_malware.py)) |
+| **Kaggle Kernel — Static Malware (Mod A')** | [`siddudavant/cyberxai-static-malware-training`](https://www.kaggle.com/code/siddudavant/cyberxai-static-malware-training) | BODMAS + EMBER-2018 RF/XGBoost trainer ([`src/kaggle_kernel_train_static_malware.py`](src/kaggle_kernel_train_static_malware.py)) |
+| **Kaggle Kernel — API Sequence (Mod A'')** | [`siddudavant/cyberxai-api-sequence-training`](https://www.kaggle.com/code/siddudavant/cyberxai-api-sequence-training) | MalAPI2019 n-gram classifier ([`src/kaggle_kernel_train_api_sequence.py`](src/kaggle_kernel_train_api_sequence.py)) |
 
 ---
 
@@ -520,3 +587,107 @@ python src/url_pipeline/train_gnn.py --data "Dataset/merged_clean_urls.csv" --sa
 python dags/cyberxai_ml_training_dag.py
 docker compose -f docker-compose.airflow.yml up -d
 ```
+
+---
+
+## Research Paper & Benchmark Dataset References
+
+All academic methods, benchmark datasets, and threat-intelligence protocols implemented or evaluated in CyberXAI are documented below alongside direct paper DOIs, upstream repository URLs, and architectural alignment notes.
+
+### 1. Literature-to-CyberXAI Module Mapping
+
+| Ref | Paper / Standard | Authors & Year | Venue / Identifier | Direct Mapping in CyberXAI |
+| :---: | :--- | :--- | :--- | :--- |
+| **[R1]** | *Machine learning-based malicious URL detection using feature selection techniques and WHOIS features* | Khedekar & Pawar (2026) | [*Frontiers in Computer Science*](https://doi.org/10.3389/fcomp.2026.1821417) | [`whois_features.py`](src/url_pipeline/whois_features.py) 5-feature WHOIS block & [`run_whois_ablation.py`](src/url_pipeline/run_whois_ablation.py) 5,000-URL ablation study |
+| **[R2]** | *Beyond Blacklists: Learning to Detect Malicious Web Sites from Suspicious URLs* | Ma, Saul, Savage & Voelker (2009) | [*ACM SIGKDD 2009*](https://doi.org/10.1145/1557019.1557153) | [`features.py`](src/url_pipeline/features.py) non-fetching lexical design & [`asn_features.py`](src/url_pipeline/asn_features.py) BGP/ASN infrastructure block |
+| **[R3]** | *Detecting Malicious URLs Using Lexical Analysis* (`ISCX-URL-2016`) | Mamun et al. (2016) | *NSS 2016* (Springer, pp. 467–482) | Canonical 4-class URL formulation & lexical entropy/obfuscation indicators underlying [`malicious_phish.csv`](https://www.kaggle.com/datasets/sid321axn/malicious-urls-dataset) |
+| **[R4]** | *PhiUSIIL: A diverse security profile empowered phishing URL detection framework* | Prasad & Chandra (2024) | [*Computers & Security*](https://doi.org/10.1016/j.cose.2023.103545) | [`PhiUSIIL_Phishing_URL_Dataset.csv`](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset) ingested with verified inverted label correction |
+| **[R5]** | *PhreshPhish: A Real-World, High-Quality, Large-Scale Phishing Website Dataset and Benchmark* | Dalton et al. (2025) | [`arXiv:2507.10854`](https://arxiv.org/abs/2507.10854) | [`phreshphish/phreshphish`](https://huggingface.co/datasets/phreshphish/phreshphish) 2025–2026 temporal URL corpus in [`build_combined_dataset.py`](src/url_pipeline/build_combined_dataset.py) |
+| **[R6]** | *PhishVN: A Time-Stamped Vietnamese URL Phishing Dataset with Impersonation-Scenario Labels* | Vu (2026) | [*Data in Brief*](https://doi.org/10.1016/j.dib.2026.113195) | [`PhishVN`](https://doi.org/10.17632/b97hxbxtpd) multi-regional URL coverage preventing non-`.com` geographic bias |
+| **[R7]** | *StealthPhisher: A Defensive Framework against Phishing Attack using Hybrid DL & GenAI* | Jha et al. (2025) | [*Expert Systems with Applications*](https://doi.org/10.1016/j.eswa.2025.130205) | [`StealthPhisher2025`](https://doi.org/10.17632/m2479kmybx) statistical/stealth phishing dataset ingestion |
+| **[R8]** | *Tranco: A Research-Oriented Top Sites Ranking Hardened Against Manipulation* | Le Pochat et al. (2019) | [*NDSS 2019*](https://doi.org/10.14722/ndss.2019.23386) | [`tranco-list.eu`](https://tranco-list.eu/) manipulation-resistant benign domain allowlist & corpus anchor |
+| **[R9]** | *Graph Attention Networks* | Veličković et al. (2018) | [`ICLR 2018` / `arXiv:1710.10903`](https://arxiv.org/abs/1710.10903) | [`URLInfraGNN`](src/url_pipeline/gnn_model.py) masked self-attention message passing & Layer-2 $\alpha_{ij}$ explainability |
+| **[R10]** | *Deep Residual Learning for Image Recognition* | He et al. (2016) | [`CVPR 2016` / `arXiv:1512.03385`](https://arxiv.org/abs/1512.03385) | Skip-connection residual block design in [`HybridURLNet`](src/url_pipeline/dl_model.py) |
+| **[R11]** | *Revisiting Deep Learning Models for Tabular Data* | Gorishniy et al. (2021) | [`NeurIPS 2021` / `arXiv:2106.11959`](https://arxiv.org/abs/2106.11959) | Pre-norm (`LayerNorm -> SiLU -> Dropout -> Skip`) tabular ResNet architecture in [`HybridURLNet`](src/url_pipeline/dl_model.py) |
+| **[R12]** | *Random Forests* | Breiman (2001) | [*Machine Learning*, 45(1)](https://doi.org/10.1023/A:1010933404324) | Core bagging tree classifier across Module B, surrogate XAI, Module A, A', and A'' |
+| **[R13]** | *XGBoost: A Scalable Tree Boosting System* | Chen & Guestrin (2016) | [*ACM SIGKDD 2016*](https://doi.org/10.1145/2939672.2939785) | Histogram-accelerated gradient boosting member in Module B & all malware modules |
+| **[R14]** | *SMOTE: Synthetic Minority Over-sampling Technique* | Chawla et al. (2002) | [*JAIR*, 16](https://doi.org/10.1613/jair.953) | Minority-class balancing in [`train.py`](src/url_pipeline/train.py) & [`run_whois_ablation.py`](src/url_pipeline/run_whois_ablation.py) |
+| **[R15]** | *A Unified Approach to Interpreting Model Predictions* (`SHAP`) | Lundberg & Lee (2017) | [`NeurIPS 2017` / `arXiv:1705.07874`](https://arxiv.org/abs/1705.07874) | Cooperative game-theoretic attribution & `GradientExplainer` in [`explain_dl.py`](src/url_pipeline/explain_dl.py) |
+| **[R16]** | *From local explanations to global understanding with explainable AI for trees* (`TreeSHAP`) | Lundberg et al. (2020) | [*Nature Machine Intelligence*, 2](https://doi.org/10.1038/s42256-019-0138-9) | Exact polynomial-time `TreeExplainer` for Module B surrogate, Module A & Module A' |
+| **[R17]** | *Axiomatic Attribution for Deep Networks* (`Integrated Gradients`) | Sundararajan et al. (2017) | [`ICML 2017` / `arXiv:1703.01365`](https://arxiv.org/abs/1703.01365) | Sensitivity & implementation-invariance foundation complementing deep gradient attributions |
+| **[R18]** | *Detecting Obfuscated Malware using Memory Feature Engineering* (`CIC-MalMem-2022`) | Carrier et al. (2022) | [*ICISSP 2022*](https://doi.org/10.5220/0010908200003120) | [`Obfuscated-MalMem2022.parquet`](https://www.unb.ca/cic/datasets/malmem-2022.html) 55 Volatility memory features in Module A |
+| **[R19]** | *BODMAS: An Open Dataset for Learning based Temporal Analysis of PE Malware* | Yang et al. (2021) | [*IEEE S&P Workshops (DLS) 2021*](https://doi.org/10.1109/SPW53761.2021.00020) | [`bodmas.parquet`](https://github.com/whyisyoung/BODMAS) temporal PE static feature pool in Module A' |
+| **[R20]** | *EMBER: An Open Dataset for Training Static PE Malware Machine Learning Models* | Anderson & Roth (2018) | [`arXiv:1804.04637`](https://arxiv.org/abs/1804.04637) | [`elastic/ember`](https://github.com/elastic/ember) 2,381-dim LIEF schema & external holdout split in Module A' |
+| **[R21]** | *Deep learning based Sequential model for malware analysis using Windows exe API Calls* (`MalAPI2019`) | Çatak et al. (2020) | [*PeerJ Computer Science*, 6, e285](https://doi.org/10.7717/peerj-cs.285) | [`MalAPI2019`](https://www.kaggle.com/datasets/focatak/malapi2019) 8-family API call sequence classifier in Module A'' |
+| **[R22]** | *Avast-CTU Public CAPE Dataset* | Bošanský et al. (2022) | [`arXiv:2209.03188`](https://arxiv.org/abs/2209.03188) | Evaluated 48,976-report sandbox behavioral upgrade path for Module A & Module A'' |
+| **[R23]** | *SOREL-20M: A Large Scale Benchmark Dataset for Malicious PE Detection* | Harang & Rudd (2020) | [`arXiv:2012.07634`](https://arxiv.org/abs/2012.07634) | Evaluated 20M-PE static benchmark (deferred due to `515 GB+` `pe_metadata` footprint) |
+
+### 2. Detailed Research Paper References
+
+#### A. Malicious URL Detection, Host Intelligence & Phishing Benchmarks
+
+- **[R1]** Khedekar, L., & Pawar, S. (2026). *Machine learning-based malicious URL detection using feature selection techniques and WHOIS features*. **Frontiers in Computer Science**, 28 May 2026. DOI: [`10.3389/fcomp.2026.1821417`](https://doi.org/10.3389/fcomp.2026.1821417).
+  - **Relevance to CyberXAI:** Directly motivates our 5-feature WHOIS enrichment block (`whois_available`, `domain_age_days`, `domain_reg_length_days`, `domain_updated_days_ago`, `whois_private_flag`) in [`src/url_pipeline/whois_features.py`](src/url_pipeline/whois_features.py) and our bounded 5,000-URL controlled ablation study in [`src/url_pipeline/run_whois_ablation.py`](src/url_pipeline/run_whois_ablation.py). Crucially, missing WHOIS records (`whois_available = 0`) act as a defensive signal rather than noise, raising CyberXAI's voting ensemble from `81.80%` to `84.20%` (`+2.40%` accuracy / `+0.0269` macro F1 vs. `+0.20%` F1 reported in the original paper).
+- **[R2]** Ma, J., Saul, L. K., Savage, S., & Voelker, G. M. (2009). *Beyond Blacklists: Learning to Detect Malicious Web Sites from Suspicious URLs*. **Proceedings of the 15th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD '09)**, Paris, France. DOI: [`10.1145/1557019.1557153`](https://doi.org/10.1145/1557019.1557153). *(Companion online-learning work: "Identifying Suspicious URLs: An Application of Large-Scale Online Learning", ICML 2009).*
+  - **Relevance to CyberXAI:** Establishes the zero-fetch paradigm of separating static URL lexical features (zero drive-by risk, millisecond latency) from asynchronous host infrastructure telemetry (Autonomous System Numbers, BGP prefixes, DNS resolution, and RIR allocations), directly implemented across [`src/url_pipeline/features.py`](src/url_pipeline/features.py) and [`src/url_pipeline/asn_features.py`](src/url_pipeline/asn_features.py).
+- **[R3]** Mamun, M. S. I., Rathore, M. A., Lashkari, A. H., Stakhanova, N., & Ghorbani, A. A. (2016). *Detecting Malicious URLs Using Lexical Analysis* (`ISCX-URL-2016`). **International Conference on Network and System Security (NSS 2016)**, Springer, pp. 467–482.
+  - **Relevance to CyberXAI:** Defines the canonical multi-class lexical decomposition (length ratios, delimiter counts, obfuscation tokens, entropy) and forms the foundation of Kaggle's 4-class `malicious_phish.csv` benchmark (`benign`, `defacement`, `phishing`, `malware`).
+- **[R4]** Prasad, A., & Chandra, S. (2024). *PhiUSIIL: A diverse security profile empowered phishing URL detection framework based on similarity index and incremental learning*. **Computers & Security**, Elsevier, 136, 103545. DOI: [`10.1016/j.cose.2023.103545`](https://doi.org/10.1016/j.cose.2023.103545) · Dataset: [UCI #967](https://archive.ics.uci.edu/dataset/967/phiusiil+phishing+url+dataset).
+  - **Relevance to CyberXAI:** Supplies `235,795` modern legitimate (`134,850`) and phishing (`100,945`) URLs (`121,776` deduplicated into `merged_clean_urls.csv`), requiring explicit handling of its inverted numeric convention (`1=benign`, `0=phishing`) documented in Section 5.3.
+- **[R5]** Dalton, T., Gowda, H., Rao, G., Pargi, S., Hadj Khodabakhshi, A., Rombs, J., Jou, S., & Marwah, M. (2025). *PhreshPhish: A Real-World, High-Quality, Large-Scale Phishing Website Dataset and Benchmark*. [`arXiv:2507.10854`](https://arxiv.org/abs/2507.10854) · Dataset: [`phreshphish/phreshphish`](https://huggingface.co/datasets/phreshphish/phreshphish).
+  - **Relevance to CyberXAI:** Addresses temporal staleness and label noise in legacy URL datasets by contributing `666,315` verified 2025–2026 HTML-URL samples into CyberXAI's combined training pipeline.
+- **[R6]** Vu, T. N. (2026). *PhishVN: A Time-Stamped Vietnamese URL Phishing Dataset with Impersonation-Scenario Labels and Confidence Tiers*. **Data in Brief**, Elsevier. Paper DOI: [`10.1016/j.dib.2026.113195`](https://doi.org/10.1016/j.dib.2026.113195) · Dataset DOI: [`10.17632/b97hxbxtpd`](https://doi.org/10.17632/b97hxbxtpd).
+  - **Relevance to CyberXAI:** Supplies `53,000+` time-stamped phishing/benign URLs across regional `.vn` infrastructure so classifiers do not memorize naive TLD geographic shortcuts.
+- **[R7]** Jha, T., Goswami, H., Solanki, C., Nagal, D., Yadav, V., & Prasad, A. (2025). *StealthPhisher: A Defensive Framework against Phishing Attack using Hybrid Deep Learning and GenAI*. **Expert Systems with Applications**, Elsevier. Paper DOI: [`10.1016/j.eswa.2025.130205`](https://doi.org/10.1016/j.eswa.2025.130205) · Dataset DOI: [`10.17632/m2479kmybx`](https://doi.org/10.17632/m2479kmybx).
+  - **Relevance to CyberXAI:** Contributes `336,749` URLs (`160,943` benign / `175,806` phishing) engineered around evasion-resistant entropy and lexical-statistical distributions.
+- **[R8]** Le Pochat, V., Van Goethem, T., Tajalizadehkhoob, S., Korczyński, M., & Joosen, W. (2019). *Tranco: A Research-Oriented Top Sites Ranking Hardened Against Manipulation*. **Network and Distributed System Security (NDSS) Symposium 2019**. DOI: [`10.14722/ndss.2019.23386`](https://doi.org/10.14722/ndss.2019.23386) · Service: [`tranco-list.eu`](https://tranco-list.eu/).
+  - **Relevance to CyberXAI:** Prevents adversarial ranking poisoning present in deprecated single-vendor lists (Alexa Top 1M) and supplies our primary benign domain allowlist and corpus anchor.
+
+#### B. Graph Neural Networks, Tabular Deep Learning & Classical Ensembles
+
+- **[R9]** Veličković, P., Cucurull, G., Casanova, A., Romero, A., Liò, P., & Bengio, Y. (2018). *Graph Attention Networks*. **International Conference on Learning Representations (ICLR 2018)**. [`arXiv:1710.10903`](https://arxiv.org/abs/1710.10903).
+  - **Relevance to CyberXAI:** Directly inspires the masked self-attention graph layer (`GraphAttentionLayer`) inside [`URLInfraGNN`](src/url_pipeline/gnn_model.py), enabling inductive classification across unseen `(URL <-> Domain <-> IP <-> ASN)` topologies in pure PyTorch and surfacing Layer-2 edge attention weights $\alpha_{ij}$ for infrastructure explainability.
+- **[R10]** He, K., Zhang, X., Ren, S., & Sun, J. (2016). *Deep Residual Learning for Image Recognition*. **IEEE Conference on Computer Vision and Pattern Recognition (CVPR 2016)**. [`arXiv:1512.03385`](https://arxiv.org/abs/1512.03385).
+- **[R11]** Gorishniy, Y., Rubachev, I., Khrulkov, V., & Babenko, A. (2021). *Revisiting Deep Learning Models for Tabular Data*. **Advances in Neural Information Processing Systems (NeurIPS 2021)**. [`arXiv:2106.11959`](https://arxiv.org/abs/2106.11959).
+  - **Relevance to CyberXAI ([R10] + [R11]):** Demonstrates that pre-normalized residual MLP blocks (`LayerNorm -> SiLU -> Dropout -> Residual Skip`) match or surpass specialized tabular architectures while competing cleanly with GBDTs — realized in CyberXAI's `47,364`-parameter [`HybridURLNet`](src/url_pipeline/dl_model.py) trained across `27.0M` URLs.
+- **[R12]** Breiman, L. (2001). *Random Forests*. **Machine Learning**, 45(1), 5–32. DOI: [`10.1023/A:1010933404324`](https://doi.org/10.1023/A:1010933404324).
+- **[R13]** Chen, T., & Guestrin, C. (2016). *XGBoost: A Scalable Tree Boosting System*. **Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD '16)**, pp. 785–794. DOI: [`10.1145/2939672.2939785`](https://doi.org/10.1145/2939672.2939785).
+- **[R14]** Chawla, N. V., Bowyer, K. W., Hall, L. O., & Kegelmeyer, W. P. (2002). *SMOTE: Synthetic Minority Over-sampling Technique*. **Journal of Artificial Intelligence Research (JAIR)**, 16, 321–357. DOI: [`10.1613/jair.953`](https://doi.org/10.1613/jair.953).
+  - **Relevance to CyberXAI ([R12]–[R14]):** Underpins Module B's calibrated Soft-Voting Ensemble (`RF + XGBoost + LR + GaussianNB`) and Modules A / A' / A'' dual-model malware baselines (`99.78%` ROC-AUC on BODMAS+EMBER), while [R14] explains minority oversampling on bounded splits ([`train.py`](src/url_pipeline/train.py)) and why PyTorch streaming instead uses inverse-frequency class weighting to avoid generating ~40M synthetic vectors.
+
+#### C. Explainable AI (XAI) Foundations
+
+- **[R15]** Lundberg, S. M., & Lee, S.-I. (2017). *A Unified Approach to Interpreting Model Predictions*. **Advances in Neural Information Processing Systems (NeurIPS 2017)**. [`arXiv:1705.07874`](https://arxiv.org/abs/1705.07874).
+  - **Relevance to CyberXAI:** Establishes Shapley additive attributions satisfying local accuracy, missingness, and consistency, powering `shap.GradientExplainer` inside [`src/url_pipeline/explain_dl.py`](src/url_pipeline/explain_dl.py).
+- **[R16]** Lundberg, S. M., Erion, G., Chen, H., DeGrave, A. J., Prutkin, J. M., Nair, B. G., Katz, R., Himmelfarb, J., Bansal, N., & Lee, S.-I. (2020). *From local explanations to global understanding with explainable AI for trees*. **Nature Machine Intelligence**, 2, 56–67. DOI: [`10.1038/s42256-019-0138-9`](https://doi.org/10.1038/s42256-019-0138-9).
+  - **Relevance to CyberXAI:** Introduces exact polynomial-time `TreeExplainer`, enabling fast local & global feature attribution across Module B's surrogate Random Forest (`url_shap_surrogate_rf.joblib`), Module A's memory forensics ensemble ([`src/malware_pipeline/explain.py`](src/malware_pipeline/explain.py)), and Module A''s 2,381-dim EMBER XGBoost classifier ([`src/malware_pipeline/explain_static.py`](src/malware_pipeline/explain_static.py)).
+- **[R17]** Sundararajan, M., Taly, A., & Yan, Q. (2017). *Axiomatic Attribution for Deep Networks*. **Proceedings of the 34th International Conference on Machine Learning (ICML 2017)**, PMLR 70, 3319–3328. [`arXiv:1703.01365`](https://arxiv.org/abs/1703.01365).
+  - **Relevance to CyberXAI:** Provides the gradient-based path-attribution guarantees underlying deep attribution methods used alongside SHAP `GradientExplainer` for tabular deep models.
+
+#### D. Malware Forensics, Static PE Headers & API Call Sequences
+
+- **[R18]** Carrier, T., Victor, P., Tekeoglu, A., & Habibi Lashkari, A. (2022). *Detecting Obfuscated Malware using Memory Feature Engineering*. **Proceedings of the 8th International Conference on Information Systems Security and Privacy (ICISSP 2022)**, pp. 177–188. DOI: [`10.5220/0010908200003120`](https://doi.org/10.5220/0010908200003120) · Dataset: [`CIC-MalMem-2022`](https://www.unb.ca/cic/datasets/malmem-2022.html).
+  - **Relevance to CyberXAI:** Defines the `VolMemLyzer` 55-feature memory-forensic representation (`pslist`, `dlllist`, `handles`, `ldrmodules`, `malfind`, `svcscan`, `callbacks`) powering CyberXAI **Module A** (`100.00%` binary accuracy / `87.31%` 4-family accuracy across `58,058` samples).
+- **[R19]** Yang, L., Ciptadi, A., Laziuk, I., Ahmadzadeh, A., & Wang, G. (2021). *BODMAS: An Open Dataset for Learning based Temporal Analysis of PE Malware*. **2021 IEEE Security and Privacy Workshops (SPW / DLS)**, pp. 78–84. DOI: [`10.1109/SPW53761.2021.00020`](https://doi.org/10.1109/SPW53761.2021.00020) · Repo: [`whyisyoung/BODMAS`](https://github.com/whyisyoung/BODMAS).
+- **[R20]** Anderson, H. S., & Roth, P. (2018). *EMBER: An Open Dataset for Training Static PE Malware Machine Learning Models*. [`arXiv:1804.04637`](https://arxiv.org/abs/1804.04637) · Repo: [`elastic/ember`](https://github.com/elastic/ember).
+  - **Relevance to CyberXAI ([R19] + [R20]):** Share an identical `2,381`-dimensional LIEF static PE schema (byte histograms, byte entropy, headers, sections, imports/exports, strings), allowing **Module A'** to train seamlessly on `BODMAS + EMBER-2018 Train` (`734,348` labeled samples) while preserving `EMBER-2018 Test` (`199,956` samples) as a strict unseen temporal benchmark (`96.60%` external accuracy, `0.9942` ROC-AUC).
+- **[R21]** Çatak, F. Ö., Yazı, A. F., Elezaj, O., & Ahmed, J. (2020). *Deep learning based Sequential model for malware analysis using Windows exe API Calls*. **PeerJ Computer Science**, 6, e285. DOI: [`10.7717/peerj-cs.285`](https://doi.org/10.7717/peerj-cs.285) · Dataset: [`focatak/malapi2019`](https://www.kaggle.com/datasets/focatak/malapi2019).
+  - **Relevance to CyberXAI:** Provides Cuckoo Sandbox API trace logs across 8 malware families (`7,107` samples) for **Module A''** (`0.9175` macro ROC-AUC via word-level 1–3 gram TF-IDF + RF/XGBoost), directly validating why single-class-heavy traces (`Trojan` vs `Backdoor`/`Downloader`) benefit from full sandbox context.
+- **[R22]** Bošanský, B., Kouba, D., Maňhal, O., Sick, T., Lisý, V., Kroustek, J., & Somol, P. (2022). *Avast-CTU Public CAPE Dataset*. [`arXiv:2209.03188`](https://arxiv.org/abs/2209.03188).
+  - **Relevance to CyberXAI:** Documented future upgrade path (`48,976` full CAPEv2 sandbox JSON execution reports across 10 malware families) for extending Module A and Module A'' beyond aggregate memory tables and fixed API strings.
+- **[R23]** Harang, R., & Rudd, E. M. (2020). *SOREL-20M: A Large Scale Benchmark Dataset for Malicious PE Detection*. [`arXiv:2012.07634`](https://arxiv.org/abs/2012.07634).
+  - **Relevance to CyberXAI:** Evaluated as a large-scale static PE corpus (`20M` PE files); intentionally deferred in favor of `BODMAS + EMBER-2018` because SOREL-20M's `pe_metadata` shard alone exceeds `515 GB+`.
+
+### 3. Threat Intelligence Feeds & Standards Links
+
+| Threat Feed / Protocol / Framework | Official Reference URL | Operational Role in CyberXAI |
+| :--- | :--- | :--- |
+| **PhishTank (Cisco Talos)** | [`https://phishtank.net/`](https://phishtank.net/) · [Developer API](https://phishtank.net/developer_info.php) | Human-verified phishing feed (`verified_online.csv`) & high-priority label anchor |
+| **OpenPhish** | [`https://openphish.com/`](https://openphish.com/) · [`feed.txt`](https://openphish.com/feed.txt) | Automated live zero-day phishing feed (`src/download_more_datasets.py`) |
+| **abuse.ch ThreatFox** | [`https://threatfox.abuse.ch/`](https://threatfox.abuse.ch/) · [API Docs](https://threatfox.abuse.ch/api/) | Authenticated C2/IOC database powering bulk ingestion & live `abuse_features.py` lookups |
+| **abuse.ch URLhaus** | [`https://urlhaus.abuse.ch/`](https://urlhaus.abuse.ch/) · [API Docs](https://urlhaus.abuse.ch/api/) | Active malware payload distribution feed & online status scoring |
+| **Tranco Top 1M** | [`https://tranco-list.eu/`](https://tranco-list.eu/) · [`top-1m.csv.zip`](https://tranco-list.eu/top-1m.csv.zip) | Hardened research-grade domain consensus list (`src/download_more_datasets.py`) |
+| **Team Cymru IP-to-ASN Mapping** | [`https://www.team-cymru.com/ip-asn-mapping`](https://www.team-cymru.com/ip-asn-mapping) | Authoritative DNS & port-43 bulk BGP prefix / ASN lookup engine (`src/url_pipeline/asn_features.py`) |
+| **CrowdStrike Falcon Sandbox (Hybrid Analysis v2)** | [`https://www.hybrid-analysis.com/`](https://www.hybrid-analysis.com/) | Live URL hash lookup, detonation feed & MITRE ATT&CK behavioral correlation (`hybrid_analysis_client.py`) |
+| **MITRE ATT&CK Enterprise Matrix** | [`https://attack.mitre.org/`](https://attack.mitre.org/) | Threat tactic/technique mapping surfaced across Hybrid Analysis & sandbox telemetry |
+| **RDAP (`RFC 7480`) / Port-43 WHOIS** | [`IETF RFC 7480`](https://datatracker.ietf.org/doc/html/rfc7480) · [`RFC Editor`](https://www.rfc-editor.org/info/rfc7480) | HTTP Registration Data Access Protocol & legacy WHOIS domain registration enrichment (`whois_features.py`) |
